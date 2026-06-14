@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Card from "@/components/Card";
+import FitValue from "@/components/FitValue";
 import { cn } from "@/lib/utils";
 
 export default function StatCard({
@@ -17,35 +18,29 @@ export default function StatCard({
 }) {
   const accentClass =
     accent === "green"
-      ? "from-emerald-500/25 to-transparent"
+      ? "border-l-emerald-500"
       : accent === "amber"
-      ? "from-amber-500/25 to-transparent"
+      ? "border-l-amber-500"
       : accent === "red"
-      ? "from-rose-500/25 to-transparent"
-      : "from-sky-500/25 to-transparent";
+      ? "border-l-rose-500"
+      : "border-l-sky-500";
 
   return (
-    <Card className="relative overflow-hidden p-5">
-      <div
-        className={cn(
-          "pointer-events-none absolute -left-10 -top-10 h-40 w-40 rounded-full bg-gradient-to-br blur-2xl",
-          accentClass
-        )}
-      />
-      <div className="relative flex items-start justify-between gap-4">
-        <div>
-          <div className="text-xs uppercase tracking-[0.18em] text-white/55">
+    <Card className={cn("relative overflow-hidden border-l-4 p-5 pr-14", accentClass)}>
+      <div className="min-w-0">
+        <div className="min-w-0">
+          <div className="text-xs uppercase tracking-[0.18em] text-app-soft">
             {label}
           </div>
-          <div className="mt-2 font-mono text-3xl font-semibold tracking-tight">
+          <FitValue className="mt-2" maxRem={1.875} minRem={1.05}>
             {value}
-          </div>
+          </FitValue>
           {detail ? (
-            <div className="mt-2 text-sm text-white/60">{detail}</div>
+            <div className="mt-2 text-sm text-app-soft">{detail}</div>
           ) : null}
         </div>
         {icon ? (
-          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/5 ring-1 ring-white/10">
+          <div className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-2xl bg-surface-soft ring-1 ring-app">
             {icon}
           </div>
         ) : null}
@@ -53,4 +48,3 @@ export default function StatCard({
     </Card>
   );
 }
-

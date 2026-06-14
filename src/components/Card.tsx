@@ -11,7 +11,7 @@ export default function Card({
   return (
     <div
       className={cn(
-        "rounded-3xl bg-white/5 ring-1 ring-white/10 backdrop-blur",
+        "rounded-2xl bg-app-panel shadow-app ring-1 ring-app",
         className
       )}
     >

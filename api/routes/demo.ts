@@ -31,6 +31,7 @@ const sample = (): OsRecord[] => {
         date,
         clientName,
         embarkPoint,
+        plate: null,
         tons: Math.round(tons * 100) / 100,
         rne: Math.round(rne * 100) / 100,
         status: 'Concluída',

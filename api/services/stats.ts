@@ -3,12 +3,20 @@ import { buildOsDayCharges, estimateRevenueForRecords } from './billing.js'
 import {
   countActiveOs,
   filterMovementRecords,
+  getOsKey,
   hasMovement,
   isRneRecord,
 } from './movement.js'
 import { aggregateTonsByOsDay, dedupeVolumeByOsDay } from './volume.js'
 
 const toMonthKey = (isoDate: string) => isoDate.slice(0, 7)
+
+const normalizeClientKey = (clientName: string): string => {
+  const [base] = clientName.split(',')
+  return (base || clientName).trim().toUpperCase()
+}
+
+const clientLabelFromKey = (clientKey: string): string => clientKey
 
 const parseRecordTimestamp = (record: OsRecord): string | null => {
   const match = record.id.match(/^(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/)
@@ -38,19 +46,43 @@ export const buildStats = (records: OsRecord[], rules: BillingRules, range: { fr
   const volume = aggregateTonsByOsDay(movementRecords)
   const tonsTotal = volume.total
   const lastUpdatedAt = getLastUpdatedAt(movementRecords)
+  const loadCount = movementRecords.filter(
+    (record) => !isRneRecord(record) && !record.id.startsWith('OSDAY-') && (record.tons ?? 0) > 0,
+  ).length
 
   const byDay = volume.byDay
+  const dailyFeeByDay = new Map<string, number>()
+  const revenueByDay = new Map<string, number>()
   const rneByDay = new Map<string, number>()
   const byMonth = new Map<string, number>()
   const byClient = new Map<string, number>()
   const revenueByClient = new Map<string, number>()
+  const clientLabels = new Map<string, string>()
   const byPoint = new Map<string, number>()
   const revenueByPoint = new Map<string, number>()
+  const byClassifier = new Map<string, number>()
+  const byOs = new Map<string, { osId: string; clientName: string; embarkPoint: string; tons: number }>()
 
   for (const r of volumeRecords) {
+    const clientKey = normalizeClientKey(r.clientName)
+    const osId = getOsKey(r)
     byMonth.set(toMonthKey(r.date), (byMonth.get(toMonthKey(r.date)) ?? 0) + (r.tons ?? 0))
-    byClient.set(r.clientName, (byClient.get(r.clientName) ?? 0) + (r.tons ?? 0))
+    byClient.set(clientKey, (byClient.get(clientKey) ?? 0) + (r.tons ?? 0))
+    clientLabels.set(clientKey, clientLabelFromKey(clientKey))
     byPoint.set(r.embarkPoint, (byPoint.get(r.embarkPoint) ?? 0) + (r.tons ?? 0))
+    if (osId) {
+      const current = byOs.get(osId)
+      byOs.set(osId, {
+        osId,
+        clientName: current?.clientName ?? r.clientName,
+        embarkPoint: current?.embarkPoint ?? r.embarkPoint,
+        tons: (current?.tons ?? 0) + (r.tons ?? 0),
+      })
+    }
+    if (r.classifierName?.trim()) {
+      const classifierName = r.classifierName.trim()
+      byClassifier.set(classifierName, (byClassifier.get(classifierName) ?? 0) + (r.tons ?? 0))
+    }
   }
 
   for (const r of records) {
@@ -73,23 +105,39 @@ export const buildStats = (records: OsRecord[], rules: BillingRules, range: { fr
   const revenue = estimateRevenueForRecords(volumeRecords, rules, movementRecords)
   const charges = buildOsDayCharges(volumeRecords, movementRecords, rules)
   for (const charge of charges) {
-    revenueByClient.set(
-      charge.clientName,
-      (revenueByClient.get(charge.clientName) ?? 0) + charge.revenueEstimatedBRL,
+    const clientKey = normalizeClientKey(charge.clientName)
+    dailyFeeByDay.set(charge.date, (dailyFeeByDay.get(charge.date) ?? 0) + 1)
+    revenueByDay.set(
+      charge.date,
+      (revenueByDay.get(charge.date) ?? 0) + charge.revenueEstimatedBRL,
     )
+    revenueByClient.set(
+      clientKey,
+      (revenueByClient.get(clientKey) ?? 0) + charge.revenueEstimatedBRL,
+    )
+    clientLabels.set(clientKey, clientLabelFromKey(clientKey))
     revenueByPoint.set(
       charge.embarkPoint,
       (revenueByPoint.get(charge.embarkPoint) ?? 0) + charge.revenueEstimatedBRL,
     )
   }
 
-  const breakdownByClient = [...byClient.entries()]
-    .map(([clientName, tons]) => ({
-      clientName,
-      tons,
-      revenueEstimatedBRL: revenueByClient.get(clientName) ?? 0,
+  const dailyFeeSeries = [...dailyFeeByDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, value]) => ({ date, value }))
+
+  const revenueDailySeries = [...revenueByDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, value]) => ({ date, value }))
+
+  const clientKeys = new Set([...byClient.keys(), ...revenueByClient.keys()])
+  const breakdownByClient = [...clientKeys]
+    .map((clientKey) => ({
+      clientName: clientLabels.get(clientKey) ?? clientKey,
+      tons: byClient.get(clientKey) ?? 0,
+      revenueEstimatedBRL: revenueByClient.get(clientKey) ?? 0,
     }))
-    .sort((a, b) => b.tons - a.tons)
+    .sort((a, b) => b.revenueEstimatedBRL - a.revenueEstimatedBRL)
     .slice(0, 20)
 
   const breakdownByPoint = [...byPoint.entries()]
@@ -100,6 +148,18 @@ export const buildStats = (records: OsRecord[], rules: BillingRules, range: { fr
     }))
     .sort((a, b) => b.tons - a.tons)
 
+  const breakdownByClassifier = [...byClassifier.entries()]
+    .map(([classifierName, tons]) => ({ classifierName, tons }))
+    .sort((a, b) => b.tons - a.tons)
+
+  const breakdownByOs = [...byOs.values()]
+    .sort((a, b) => b.tons - a.tons)
+    .slice(0, 20)
+
+  const daysWithVolume = byDay.size
+  const avgTonsPerOs = osCount > 0 ? tonsTotal / osCount : 0
+  const avgTonsPerDay = daysWithVolume > 0 ? tonsTotal / daysWithVolume : 0
+
   return {
     range,
     kpis: {
@@ -107,14 +167,21 @@ export const buildStats = (records: OsRecord[], rules: BillingRules, range: { fr
       tonsTotal,
       dailyFeeCount: revenue.dailyFeeCount,
       tonsDailySeries,
+      dailyFeeSeries,
+      revenueDailySeries,
       tonsMonthlySeries,
       rneSeries,
       revenueEstimatedBRL: revenue.revenueEstimatedBRL,
       lastUpdatedAt,
+      loadCount,
+      avgTonsPerOs,
+      avgTonsPerDay,
     },
     breakdowns: {
       byClient: breakdownByClient,
       byEmbarkPoint: breakdownByPoint,
+      byClassifier: breakdownByClassifier,
+      byOs: breakdownByOs,
     },
   }
 }

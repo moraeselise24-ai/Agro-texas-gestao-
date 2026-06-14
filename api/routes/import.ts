@@ -52,6 +52,7 @@ router.post('/csv', async (req: Request, res: Response): Promise<void> => {
       const date = r.date || r.data || r.Data || ''
       const clientName = r.clientName || r.cliente || r.Cliente || ''
       const embarkPoint = r.embarkPoint || r.ponto || r.pontoEmbarque || r['ponto de embarque'] || ''
+      const plate = r.plate || r.placa || r.Placa || null
       const tonsRaw = r.tons || r.toneladas || r.Toneladas || ''
       const rneRaw = r.rne || r.RNE || ''
       const status = r.status || r.Status || null
@@ -62,6 +63,7 @@ router.post('/csv', async (req: Request, res: Response): Promise<void> => {
         date: normalizeDateToIso(date),
         clientName: String(clientName),
         embarkPoint: String(embarkPoint),
+        plate: plate == null ? null : String(plate),
         tons: toNumber(String(tonsRaw)),
         rne: rneRaw ? toNumber(String(rneRaw)) : null,
         status: status == null ? null : String(status),

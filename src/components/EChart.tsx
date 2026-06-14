@@ -7,7 +7,7 @@ export default function EChart({
   onEvents,
 }: {
   option: Record<string, unknown>;
-  height?: number;
+  height?: number | string;
   chartKey?: string;
   onEvents?: Record<string, (params: unknown) => void>;
 }) {

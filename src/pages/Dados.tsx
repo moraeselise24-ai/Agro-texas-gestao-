@@ -1,20 +1,40 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Search } from "lucide-react";
+import { Download, Eye, Search, X } from "lucide-react";
 import ChartCard from "@/components/ChartCard";
 import DateRangePicker from "@/components/DateRangePicker";
+import FitValue from "@/components/FitValue";
+import { useToast } from "@/components/ToastProvider";
 import { useRangeStore } from "@/stores/useRangeStore";
 import { apiGet } from "@/utils/api";
 import { formatTons } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+const brl = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+});
+
 type OsRecord = {
   id: string;
+  osId?: string | null;
   date: string;
   clientName: string;
   embarkPoint: string;
+  plate: string | null;
   tons: number;
   rne: number | null;
   status: string | null;
+};
+
+type OsDetail = {
+  osId: string;
+  clientName: string | null;
+  embarkPoint: string | null;
+  tonsTotal: number;
+  rneCount: number;
+  revenueEstimatedBRL: number;
+  dailyFeeCount: number;
+  records: OsRecord[];
 };
 
 type RecordTypeFilter = "all" | "loads" | "rne";
@@ -26,15 +46,23 @@ const typeFilterOptions: Array<{ value: RecordTypeFilter; label: string }> = [
 ];
 
 export default function Dados() {
+  const toast = useToast();
   const { range, setRange } = useRangeStore();
   const [q, setQ] = useState("");
+  const [client, setClient] = useState("");
   const [typeFilter, setTypeFilter] = useState<RecordTypeFilter>("all");
   const [page, setPage] = useState(1);
   const [pageSize] = useState(25);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<OsRecord[]>([]);
   const [total, setTotal] = useState(0);
+  const [volume, setVolume] = useState<number | null>(null);
+  const [revenue, setRevenue] = useState<number | null>(null);
+  const [volumeLoading, setVolumeLoading] = useState(false);
+  const [clients, setClients] = useState<string[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
+  const [selectedOs, setSelectedOs] = useState<OsDetail | null>(null);
+  const [selectedOsLoading, setSelectedOsLoading] = useState(false);
 
   const query = useMemo(() => {
     const p = new URLSearchParams();
@@ -44,17 +72,35 @@ export default function Dados() {
     p.set("pageSize", String(pageSize));
     p.set("type", typeFilter);
     if (q.trim().length) p.set("q", q.trim());
+    if (client.trim().length) p.set("client", client.trim());
     return p.toString();
-  }, [page, pageSize, q, range.from, range.to, typeFilter]);
+  }, [client, page, pageSize, q, range.from, range.to, typeFilter]);
+
+  const clientsQuery = useMemo(() => {
+    const p = new URLSearchParams();
+    p.set("from", range.from);
+    p.set("to", range.to);
+    p.set("type", typeFilter);
+    return p.toString();
+  }, [range.from, range.to, typeFilter]);
+
+  const statsQuery = useMemo(() => {
+    const p = new URLSearchParams();
+    p.set("from", range.from);
+    p.set("to", range.to);
+    p.set("type", typeFilter);
+    if (q.trim().length) p.set("q", q.trim());
+    if (client.trim().length) p.set("client", client.trim());
+    return p.toString();
+  }, [client, q, range.from, range.to, typeFilter]);
 
   useEffect(() => {
     setPage(1);
-  }, [range.from, range.to, q, typeFilter]);
+  }, [range.from, range.to, q, typeFilter, client]);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    setError(null);
     apiGet<{ items: OsRecord[]; total: number }>(`/api/os?${query}`)
       .then((r) => {
         if (!alive) return;
@@ -63,7 +109,7 @@ export default function Dados() {
       })
       .catch((e: unknown) => {
         if (!alive) return;
-        setError(e instanceof Error ? e.message : "Falha ao carregar");
+        toast.error(e instanceof Error ? e.message : "Falha ao carregar");
       })
       .finally(() => {
         if (!alive) return;
@@ -74,10 +120,65 @@ export default function Dados() {
     };
   }, [query]);
 
-  const pages = Math.max(1, Math.ceil(total / pageSize));
+  useEffect(() => {
+    let alive = true;
+    setClientsLoading(true);
+    apiGet<{ clients: string[] }>(`/api/clients?${clientsQuery}`)
+      .then((r) => {
+        if (!alive) return;
+        setClients(r.clients ?? []);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setClients([]);
+      })
+      .finally(() => {
+        if (!alive) return;
+        setClientsLoading(false);
+      });
 
-  const exportCsv = async () => {
-    const res = await fetch("/api/export", {
+    return () => {
+      alive = false;
+    };
+  }, [clientsQuery]);
+
+  useEffect(() => {
+    let alive = true;
+    setVolumeLoading(true);
+    apiGet<{ stats: { kpis: { tonsTotal: number; revenueEstimatedBRL: number } } }>(
+      `/api/stats?${statsQuery}`
+    )
+      .then((r) => {
+        if (!alive) return;
+        setVolume(r.stats.kpis.tonsTotal ?? 0);
+        setRevenue(r.stats.kpis.revenueEstimatedBRL ?? 0);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setVolume(null);
+        setRevenue(null);
+      })
+      .finally(() => {
+        if (!alive) return;
+        setVolumeLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [statsQuery]);
+
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const clientOptions = useMemo(() => {
+    const current = client.trim();
+    if (!current) return clients;
+    if (clients.includes(current)) return clients;
+    return [current, ...clients];
+  }, [client, clients]);
+
+  const exportFile = async (format: "csv" | "xlsx" | "pdf") => {
+    const endpoint = format === "csv" ? "/api/export" : `/api/export/${format}`;
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -85,6 +186,7 @@ export default function Dados() {
         to: range.to,
         type: typeFilter,
         q: q.trim() || undefined,
+        client: client.trim() || undefined,
       }),
     });
     if (!res.ok) {
@@ -94,23 +196,41 @@ export default function Dados() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `export_${typeFilter}_${range.from}_${range.to}.csv`;
+    a.download = `relatorio_${typeFilter}_${range.from}_${range.to}.${format}`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
   };
 
+  const openOsDetail = async (osId: string) => {
+    setSelectedOsLoading(true);
+    try {
+      const params = new URLSearchParams({ from: range.from, to: range.to });
+      const response = await apiGet<{ detail: OsDetail }>(
+        `/api/os/${encodeURIComponent(osId)}/details?${params.toString()}`
+      );
+      setSelectedOs(response.detail);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Falha ao carregar detalhes da OS");
+    } finally {
+      setSelectedOsLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="text-xs uppercase tracking-[0.2em] text-white/50">
+          <div className="text-xs uppercase tracking-[0.2em] text-app-faint">
             Base de dados
           </div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">OS e Registros</h1>
-          <div className="mt-2 text-sm text-white/60">
-            {total} registro(s) com movimentação no período
+          <div className="mt-2 text-sm text-app-soft">
+            {total} registro(s) com movimentação no período • Volume:{" "}
+            {volumeLoading ? "..." : volume == null ? "—" : `${formatTons(volume)} t`} •
+            Faturamento:{" "}
+            {volumeLoading ? "..." : revenue == null ? "—" : brl.format(revenue)}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -119,28 +239,44 @@ export default function Dados() {
             type="button"
             className={cn(
               "inline-flex h-10 items-center gap-2 rounded-2xl px-4 text-sm",
-              "bg-white/5 ring-1 ring-white/10 transition hover:bg-white/10"
+              "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover"
             )}
-            onClick={() => exportCsv().catch((e) => setError(String(e)))}
+            onClick={() => exportFile("csv").catch((e) => toast.error(String(e)))}
           >
             <Download className="h-4 w-4" />
-            Exportar CSV
+            CSV
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "inline-flex h-10 items-center gap-2 rounded-2xl px-4 text-sm",
+              "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover"
+            )}
+            onClick={() => exportFile("xlsx").catch((e) => toast.error(String(e)))}
+          >
+            <Download className="h-4 w-4" />
+            Excel
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "inline-flex h-10 items-center gap-2 rounded-2xl px-4 text-sm",
+              "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover"
+            )}
+            onClick={() => exportFile("pdf").catch((e) => toast.error(String(e)))}
+          >
+            <Download className="h-4 w-4" />
+            PDF
           </button>
         </div>
       </header>
-
-      {error ? (
-        <div className="rounded-2xl bg-rose-500/10 p-4 text-sm text-rose-200 ring-1 ring-rose-500/20">
-          {error}
-        </div>
-      ) : null}
 
       <ChartCard
         title="Registros"
         subtitle="Pesquisa por id/cliente/ponto e paginação"
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex h-10 rounded-2xl bg-white/5 p-1 ring-1 ring-white/10">
+            <div className="inline-flex h-10 rounded-2xl bg-surface-soft p-1 ring-1 ring-app">
               {typeFilterOptions.map((option) => (
                 <button
                   key={option.value}
@@ -148,8 +284,8 @@ export default function Dados() {
                   className={cn(
                     "rounded-xl px-3 text-sm transition",
                     typeFilter === option.value
-                      ? "bg-white/10 text-white ring-1 ring-white/10"
-                      : "text-white/60 hover:text-white"
+                      ? "bg-surface-hover text-app ring-1 ring-app"
+                      : "text-app-soft hover:text-app"
                   )}
                   onClick={() => setTypeFilter(option.value)}
                 >
@@ -157,61 +293,91 @@ export default function Dados() {
                 </button>
               ))}
             </div>
+            <select
+              value={client}
+              onChange={(e) => setClient(e.target.value)}
+              disabled={clientsLoading}
+              className={cn(
+                "h-10 w-56 rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                "outline-none ring-1 ring-app focus:ring-app-strong"
+              )}
+            >
+              <option value="">Todos os clientes</option>
+              {clientOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-app-faint" />
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Buscar..."
                 className={cn(
-                  "h-10 w-64 rounded-2xl bg-white/5 pl-10 pr-3 text-sm text-white",
-                  "outline-none ring-1 ring-white/10 focus:ring-white/20"
+                  "h-10 w-64 rounded-2xl bg-surface-soft pl-10 pr-3 text-sm text-app",
+                  "outline-none ring-1 ring-app focus:ring-app-strong"
                 )}
               />
             </div>
           </div>
         }
       >
-        <div className="overflow-hidden rounded-2xl ring-1 ring-white/10">
+        <div className="overflow-hidden rounded-2xl ring-1 ring-app">
           <div className="overflow-auto">
-            <table className="min-w-[900px] w-full text-left text-sm">
-              <thead className="bg-black/20 text-xs uppercase tracking-[0.16em] text-white/55">
+            <table className="min-w-[1120px] w-full text-left text-sm">
+              <thead className="bg-table-head text-xs uppercase tracking-[0.16em] text-app-soft">
                 <tr>
                   <th className="px-4 py-3">Data</th>
                   <th className="px-4 py-3">OS</th>
                   <th className="px-4 py-3">Cliente</th>
                   <th className="px-4 py-3">Ponto</th>
+                  <th className="px-4 py-3">Placa</th>
                   <th className="px-4 py-3">Ton</th>
                   <th className="px-4 py-3">RNE</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/10">
+              <tbody className="divide-y divide-app">
                 {loading ? (
                   <tr>
-                    <td className="px-4 py-6 text-white/60" colSpan={7}>
+                    <td className="px-4 py-6 text-app-soft" colSpan={9}>
                       Carregando...
                     </td>
                   </tr>
                 ) : items.length ? (
                   items.map((r) => (
-                    <tr key={r.id} className="hover:bg-white/5">
-                      <td className="px-4 py-3 font-mono text-white/70">{r.date}</td>
+                    <tr key={r.id} className="hover:bg-surface-hover">
+                      <td className="px-4 py-3 font-mono text-app-muted">{r.date}</td>
                       <td className="px-4 py-3 font-mono">{r.id}</td>
                       <td className="px-4 py-3">{r.clientName}</td>
                       <td className="px-4 py-3">{r.embarkPoint}</td>
+                      <td className="px-4 py-3 font-mono text-app-muted">{r.plate ?? "—"}</td>
                       <td className="px-4 py-3 font-mono">{formatTons(r.tons)}</td>
                       <td className="px-4 py-3 font-mono">
                         {r.rne == null ? "—" : r.rne}
                       </td>
-                      <td className="px-4 py-3 text-white/70">
+                      <td className="px-4 py-3 text-app-muted">
                         {r.status ?? "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          disabled={!r.osId && !r.id}
+                          onClick={() => openOsDetail(r.osId ?? r.id)}
+                          className="inline-flex h-9 items-center gap-2 rounded-xl bg-surface-soft px-3 text-sm ring-1 ring-app transition hover:bg-surface-hover disabled:opacity-50"
+                        >
+                          <Eye className="h-4 w-4" />
+                          Detalhar
+                        </button>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td className="px-4 py-6 text-white/60" colSpan={7}>
+                    <td className="px-4 py-6 text-app-soft" colSpan={9}>
                       Sem registros para o período.
                     </td>
                   </tr>
@@ -222,7 +388,7 @@ export default function Dados() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-xs text-white/55">
+          <div className="text-xs text-app-soft">
             Página {page} de {pages}
           </div>
           <div className="flex items-center gap-2">
@@ -230,7 +396,7 @@ export default function Dados() {
               type="button"
               className={cn(
                 "h-9 rounded-xl px-3 text-sm",
-                "bg-white/5 ring-1 ring-white/10 transition hover:bg-white/10 disabled:opacity-40"
+                "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover disabled:opacity-40"
               )}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
@@ -241,7 +407,7 @@ export default function Dados() {
               type="button"
               className={cn(
                 "h-9 rounded-xl px-3 text-sm",
-                "bg-white/5 ring-1 ring-white/10 transition hover:bg-white/10 disabled:opacity-40"
+                "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover disabled:opacity-40"
               )}
               onClick={() => setPage((p) => Math.min(pages, p + 1))}
               disabled={page >= pages}
@@ -251,6 +417,94 @@ export default function Dados() {
           </div>
         </div>
       </ChartCard>
+      {selectedOs ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-app-overlay p-4">
+          <div className="w-full max-w-[1050px] overflow-hidden rounded-3xl bg-app ring-1 ring-app-strong">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-app p-5">
+              <div className="min-w-0">
+                <div className="text-xs uppercase tracking-[0.18em] text-app-faint">
+                  Detalhes da OS
+                </div>
+                <h2 className="mt-1 truncate text-lg font-semibold">{selectedOs.osId}</h2>
+                <div className="mt-1 text-sm text-app-soft">
+                  {selectedOs.clientName ?? "Cliente não informado"} · {selectedOs.embarkPoint ?? "Ponto não informado"}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover"
+                onClick={() => setSelectedOs(null)}
+                aria-label="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[78vh] overflow-auto p-5">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                <div className="rounded-2xl bg-surface-soft p-4 ring-1 ring-app">
+                  <div className="text-xs uppercase tracking-[0.16em] text-app-faint">Volume</div>
+                  <FitValue className="mt-2" maxRem={1.125} minRem={0.85}>
+                    {formatTons(selectedOs.tonsTotal)} t
+                  </FitValue>
+                </div>
+                <div className="rounded-2xl bg-surface-soft p-4 ring-1 ring-app">
+                  <div className="text-xs uppercase tracking-[0.16em] text-app-faint">RNE</div>
+                  <FitValue className="mt-2" maxRem={1.125} minRem={0.85}>
+                    {selectedOs.rneCount}
+                  </FitValue>
+                </div>
+                <div className="rounded-2xl bg-surface-soft p-4 ring-1 ring-app">
+                  <div className="text-xs uppercase tracking-[0.16em] text-app-faint">Diárias</div>
+                  <FitValue className="mt-2" maxRem={1.125} minRem={0.85}>
+                    {selectedOs.dailyFeeCount}
+                  </FitValue>
+                </div>
+                <div className="rounded-2xl bg-surface-soft p-4 ring-1 ring-app">
+                  <div className="text-xs uppercase tracking-[0.16em] text-app-faint">Faturamento</div>
+                  <FitValue className="mt-2" maxRem={1.125} minRem={0.85}>
+                    {brl.format(selectedOs.revenueEstimatedBRL)}
+                  </FitValue>
+                </div>
+              </div>
+
+              <div className="mt-5 overflow-hidden rounded-2xl ring-1 ring-app">
+                <div className="overflow-auto">
+                  <table className="w-full min-w-[900px] text-left text-sm">
+                    <thead className="bg-table-head text-xs uppercase tracking-[0.16em] text-app-soft">
+                      <tr>
+                        <th className="px-4 py-3">Data</th>
+                        <th className="px-4 py-3">Registro</th>
+                        <th className="px-4 py-3">Placa</th>
+                        <th className="px-4 py-3">Ton</th>
+                        <th className="px-4 py-3">RNE</th>
+                        <th className="px-4 py-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-app">
+                      {selectedOs.records.map((record) => (
+                        <tr key={record.id} className="hover:bg-surface-hover">
+                          <td className="px-4 py-3 font-mono text-app-muted">{record.date}</td>
+                          <td className="px-4 py-3 font-mono">{record.id}</td>
+                          <td className="px-4 py-3 font-mono text-app-muted">{record.plate ?? "—"}</td>
+                          <td className="px-4 py-3 font-mono">{formatTons(record.tons)}</td>
+                          <td className="px-4 py-3 font-mono">{record.rne ?? "—"}</td>
+                          <td className="px-4 py-3 text-app-muted">{record.status ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {selectedOsLoading ? (
+        <div className="fixed bottom-4 right-4 z-50 rounded-2xl bg-app-panel px-4 py-3 text-sm shadow-app ring-1 ring-app">
+          Carregando OS...
+        </div>
+      ) : null}
     </div>
   );
 }

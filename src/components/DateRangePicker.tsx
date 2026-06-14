@@ -28,7 +28,7 @@ export default function DateRangePicker({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex flex-wrap items-center gap-1 rounded-2xl bg-white/5 p-1 ring-1 ring-white/10">
+      <div className="flex flex-wrap items-center gap-1 rounded-2xl bg-surface-soft p-1 ring-1 ring-app">
         {presetOrder.map(key => {
           const preset = rangePresets[key];
           const active = activePreset === key;
@@ -40,8 +40,8 @@ export default function DateRangePicker({
               className={cn(
                 "h-8 rounded-xl px-3 text-xs font-medium transition",
                 active
-                  ? "bg-emerald-500/20 text-emerald-100 ring-1 ring-emerald-400/30"
-                  : "text-white/70 hover:bg-white/10 hover:text-white"
+                  ? "bg-emerald-500/20 text-emerald-800 dark:text-emerald-100 ring-1 ring-emerald-400/30"
+                  : "text-app-muted hover:bg-surface-hover hover:text-app"
               )}
             >
               {preset.label}
@@ -54,7 +54,7 @@ export default function DateRangePicker({
         type="button"
         className={cn(
           "inline-flex h-10 w-10 items-center justify-center rounded-xl",
-          "bg-white/5 ring-1 ring-white/10 transition hover:bg-white/10"
+          "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover"
         )}
         onClick={() => shift(-7)}
         aria-label="Voltar 7 dias"
@@ -62,21 +62,21 @@ export default function DateRangePicker({
         <ChevronLeft className="h-4 w-4" />
       </button>
 
-      <div className="flex items-center gap-2 rounded-2xl bg-white/5 px-3 py-2 ring-1 ring-white/10">
-        <Calendar className="h-4 w-4 text-white/70" />
-        <label className="text-xs text-white/60">De</label>
+      <div className="flex items-center gap-2 rounded-2xl bg-surface-soft px-3 py-2 ring-1 ring-app">
+        <Calendar className="h-4 w-4 text-app-muted" />
+        <label className="text-xs text-app-soft">De</label>
         <input
           type="date"
           value={value.from}
           onChange={e => onChange({ ...value, from: e.target.value })}
-          className="h-8 rounded-lg bg-transparent px-2 text-sm text-white outline-none ring-1 ring-transparent focus:ring-white/20"
+          className="h-8 rounded-lg bg-transparent px-2 text-sm text-app outline-none ring-1 ring-transparent focus:ring-app-strong"
         />
-        <label className="text-xs text-white/60">Até</label>
+        <label className="text-xs text-app-soft">Até</label>
         <input
           type="date"
           value={value.to}
           onChange={e => onChange({ ...value, to: e.target.value })}
-          className="h-8 rounded-lg bg-transparent px-2 text-sm text-white outline-none ring-1 ring-transparent focus:ring-white/20"
+          className="h-8 rounded-lg bg-transparent px-2 text-sm text-app outline-none ring-1 ring-transparent focus:ring-app-strong"
         />
       </div>
 
@@ -84,7 +84,7 @@ export default function DateRangePicker({
         type="button"
         className={cn(
           "inline-flex h-10 w-10 items-center justify-center rounded-xl",
-          "bg-white/5 ring-1 ring-white/10 transition hover:bg-white/10"
+          "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover"
         )}
         onClick={() => shift(7)}
         aria-label="Avançar 7 dias"

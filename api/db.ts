@@ -78,6 +78,7 @@ export const initDb = async () => {
       date TEXT NOT NULL,
       client_name TEXT NOT NULL,
       embark_point TEXT NOT NULL,
+      plate TEXT,
       tons REAL NOT NULL,
       rne REAL,
       status TEXT
@@ -85,9 +86,11 @@ export const initDb = async () => {
   `,
   )
 
+  await db.run(`ALTER TABLE os_records ADD COLUMN plate TEXT`).catch(() => undefined)
   await db.run(`CREATE INDEX IF NOT EXISTS idx_os_records_date ON os_records(date)`)
   await db.run(`CREATE INDEX IF NOT EXISTS idx_os_records_client ON os_records(client_name)`)
   await db.run(`CREATE INDEX IF NOT EXISTS idx_os_records_point ON os_records(embark_point)`)
+  await db.run(`CREATE INDEX IF NOT EXISTS idx_os_records_plate ON os_records(plate)`)
 
   await db.run(
     `

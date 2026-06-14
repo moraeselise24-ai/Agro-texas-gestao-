@@ -1,7 +1,52 @@
 import { Router, type Request, type Response } from 'express'
-import { listOsRecords } from '../repositories/osRepo.js'
+import { getBillingRules } from '../repositories/configRepo.js'
+import { listOsRecords, listOsRecordsByOsId } from '../repositories/osRepo.js'
+import { estimateRevenueForRecords } from '../services/billing.js'
+import { filterMovementRecords, isRneRecord } from '../services/movement.js'
+import { dedupeVolumeByOsDay } from '../services/volume.js'
 
 const router = Router()
+
+router.get('/:osId/details', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const osId = String(req.params.osId ?? '').trim()
+    const from = req.query.from ? String(req.query.from) : undefined
+    const to = req.query.to ? String(req.query.to) : undefined
+
+    if (!osId) {
+      res.status(400).json({ success: false, error: 'Missing osId' })
+      return
+    }
+
+    const records = await listOsRecordsByOsId({ osId, from, to })
+    const movementRecords = filterMovementRecords(records)
+    const volumeRecords = dedupeVolumeByOsDay(movementRecords)
+    const rules = await getBillingRules()
+    const revenue = estimateRevenueForRecords(volumeRecords, rules, movementRecords)
+    const tonsTotal = volumeRecords.reduce((sum, record) => sum + (Number(record.tons ?? 0) || 0), 0)
+    const rneCount = records.filter((record) => isRneRecord(record)).length
+    const first = records[0] ?? null
+
+    res.status(200).json({
+      success: true,
+      detail: {
+        osId,
+        clientName: first?.clientName ?? null,
+        embarkPoint: first?.embarkPoint ?? null,
+        tonsTotal,
+        rneCount,
+        revenueEstimatedBRL: revenue.revenueEstimatedBRL,
+        dailyFeeCount: revenue.dailyFeeCount,
+        records,
+      },
+    })
+  } catch (e: unknown) {
+    res.status(500).json({
+      success: false,
+      error: e instanceof Error ? e.message : 'Falha ao buscar detalhes da OS',
+    })
+  }
+})
 
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   const from = String(req.query.from ?? '')

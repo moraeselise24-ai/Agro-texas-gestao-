@@ -54,7 +54,14 @@ router.post('/run', async (_req: Request, res: Response): Promise<void> => {
     res.status(200).json({ success: true, ...result })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Collector failed'
-    const status = message === 'Collector not configured' ? 400 : 500
+    if (message === 'Coleta já em execução') {
+      res.status(200).json({ success: true, skipped: true, reason: message })
+      return
+    }
+    const status =
+      message === 'Collector not configured'
+        ? 400
+        : 500
     res.status(status).json({ success: false, error: message })
   }
 })

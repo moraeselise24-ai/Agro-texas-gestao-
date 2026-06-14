@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowUpRight, CloudDownload, Save, Search, Upload } from "lucide-react";
 import ChartCard from "@/components/ChartCard";
 import Card from "@/components/Card";
+import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/utils";
 import { apiGet, apiJson } from "@/utils/api";
 
@@ -25,49 +26,46 @@ const Field = ({
 }) => {
   return (
     <label className="block">
-      <div className="text-xs uppercase tracking-[0.16em] text-white/55">
+      <div className="text-xs uppercase tracking-[0.16em] text-app-soft">
         {label}
       </div>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className={cn(
-          "mt-2 h-11 w-full rounded-2xl bg-white/5 px-4 text-sm text-white",
-          "outline-none ring-1 ring-white/10 focus:ring-white/20"
+          "mt-2 h-11 w-full rounded-2xl bg-surface-soft px-4 text-sm text-app",
+          "outline-none ring-1 ring-app focus:ring-app-strong"
         )}
       />
-      {hint ? <div className="mt-2 text-xs text-white/50">{hint}</div> : null}
+      {hint ? <div className="mt-2 text-xs text-app-faint">{hint}</div> : null}
     </label>
   );
 };
 
 export default function Configuracoes() {
+  const toast = useToast();
   const [rules, setRules] = useState<BillingRules | null>(null);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     apiGet<{ rules: BillingRules }>("/api/config")
       .then((r) => setRules(r.rules))
       .catch((e: unknown) =>
-        setError(e instanceof Error ? e.message : "Falha ao carregar")
+        toast.error(e instanceof Error ? e.message : "Falha ao carregar")
       );
   }, []);
 
   const save = async () => {
     if (!rules) return;
     setSaving(true);
-    setError(null);
-    setNotice(null);
     try {
       await apiJson("/api/config", { method: "PUT", body: rules });
-      setNotice("Regras salvas.");
+      toast.success("Regras salvas.");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Falha ao salvar");
+      toast.error(e instanceof Error ? e.message : "Falha ao salvar");
     } finally {
       setSaving(false);
     }
@@ -75,8 +73,6 @@ export default function Configuracoes() {
 
   const discoverColumns = async () => {
     setDiscovering(true);
-    setError(null);
-    setNotice(null);
     try {
       const r = await apiGet<{
         discovery: {
@@ -89,13 +85,13 @@ export default function Configuracoes() {
       const cols = r.discovery.headers
         .map((c) => `${c.index}: ${c.header}${c.sample ? ` (ex: ${c.sample})` : ""}`)
         .join(" · ");
-      setNotice(
+      toast.info(
         hoje == null
           ? `Colunas: ${cols}. Não achei "Embarcado Hoje" — veja a lista acima.`
           : `Embarcado Hoje = coluna ${hoje}. No terminal: ${r.discovery.flySecretsCommand ?? `fly secrets set CLASSIFIC_OS_EMBARCADO_HOJE_COL="${hoje}"`}`,
       );
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Falha ao detectar colunas");
+      toast.error(e instanceof Error ? e.message : "Falha ao detectar colunas");
     } finally {
       setDiscovering(false);
     }
@@ -103,14 +99,14 @@ export default function Configuracoes() {
 
   const runCollector = async () => {
     setRunning(true);
-    setError(null);
-    setNotice(null);
     try {
       const r = await apiJson<{
         imported: number;
         laudos?: number;
         rne?: number;
         duplicatesDropped?: number;
+        removedStaleLaudos?: number;
+        removedStaleRne?: number;
       }>("/api/collect/run", {
         method: "POST",
       });
@@ -118,11 +114,19 @@ export default function Configuracoes() {
         r.duplicatesDropped && r.duplicatesDropped > 0
           ? ` (${r.duplicatesDropped} duplicados ignorados)`
           : "";
-      setNotice(
-        `Coleta concluída. Importados: ${r.imported} (laudos: ${r.laudos ?? "—"}, RNE: ${r.rne ?? 0})${dup}`,
+      const removed =
+        r.removedStaleLaudos && r.removedStaleLaudos > 0
+          ? `, removidos: ${r.removedStaleLaudos}`
+          : "";
+      const removedRne =
+        r.removedStaleRne && r.removedStaleRne > 0
+          ? `, RNE removidos: ${r.removedStaleRne}`
+          : "";
+      toast.success(
+        `Coleta concluída. Importados: ${r.imported} (laudos: ${r.laudos ?? "—"}, RNE: ${r.rne ?? 0}${removed}${removedRne})${dup}`,
       );
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Falha na coleta");
+      toast.error(e instanceof Error ? e.message : "Falha na coleta");
     } finally {
       setRunning(false);
     }
@@ -130,8 +134,6 @@ export default function Configuracoes() {
 
   const importCsv = async (file: File) => {
     setImporting(true);
-    setError(null);
-    setNotice(null);
     try {
       const text = await file.text();
       const contentBase64 = btoa(unescape(encodeURIComponent(text)));
@@ -139,9 +141,9 @@ export default function Configuracoes() {
         method: "POST",
         body: { contentBase64, delimiter: ";" },
       });
-      setNotice(`Importação concluída. Importados: ${r.imported}`);
+      toast.success(`Importação concluída. Importados: ${r.imported}`);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Falha na importação");
+      toast.error(e instanceof Error ? e.message : "Falha na importação");
     } finally {
       setImporting(false);
     }
@@ -151,29 +153,18 @@ export default function Configuracoes() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="text-xs uppercase tracking-[0.2em] text-white/50">
+          <div className="text-xs uppercase tracking-[0.2em] text-app-faint">
             Operação
           </div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">
             Configurações
           </h1>
-          <div className="mt-2 text-sm text-white/60">
+          <div className="mt-2 text-sm text-app-soft">
             Ajuste regras e atualize a base de dados.
           </div>
         </div>
       </header>
 
-      {error ? (
-        <div className="rounded-2xl bg-rose-500/10 p-4 text-sm text-rose-200 ring-1 ring-rose-500/20">
-          {error}
-        </div>
-      ) : null}
-
-      {notice ? (
-        <div className="rounded-2xl bg-emerald-500/10 p-4 text-sm text-emerald-200 ring-1 ring-emerald-500/20">
-          {notice}
-        </div>
-      ) : null}
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <ChartCard
@@ -186,7 +177,7 @@ export default function Configuracoes() {
               disabled={!rules || saving}
               className={cn(
                 "inline-flex h-10 items-center gap-2 rounded-2xl px-4 text-sm",
-                "bg-white/5 ring-1 ring-white/10 transition hover:bg-white/10 disabled:opacity-40"
+                "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover disabled:opacity-40"
               )}
             >
               <Save className="h-4 w-4" />
@@ -230,7 +221,7 @@ export default function Configuracoes() {
               />
             </div>
           ) : (
-            <div className="text-sm text-white/60">Carregando...</div>
+            <div className="text-sm text-app-soft">Carregando...</div>
           )}
         </ChartCard>
 
@@ -243,7 +234,7 @@ export default function Configuracoes() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold">Coletor</div>
-                  <div className="mt-1 text-xs text-white/55">
+                  <div className="mt-1 text-xs text-app-soft">
                     Precisa configurar variáveis de ambiente no servidor.
                   </div>
                 </div>
@@ -254,7 +245,7 @@ export default function Configuracoes() {
                     disabled={discovering || running}
                     className={cn(
                       "inline-flex h-10 items-center gap-2 rounded-2xl px-4 text-sm",
-                      "bg-white/5 ring-1 ring-white/10 transition hover:bg-white/10 disabled:opacity-40"
+                      "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover disabled:opacity-40"
                     )}
                   >
                     <Search className="h-4 w-4" />
@@ -266,7 +257,7 @@ export default function Configuracoes() {
                     disabled={running || discovering}
                     className={cn(
                       "inline-flex h-10 items-center gap-2 rounded-2xl px-4 text-sm",
-                      "bg-white/5 ring-1 ring-white/10 transition hover:bg-white/10 disabled:opacity-40"
+                      "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover disabled:opacity-40"
                     )}
                   >
                     <CloudDownload className="h-4 w-4" />
@@ -274,12 +265,12 @@ export default function Configuracoes() {
                   </button>
                 </div>
               </div>
-              <div className="mt-4 rounded-2xl bg-black/20 p-3 text-xs text-white/60 ring-1 ring-white/10">
+              <div className="mt-4 rounded-2xl bg-table-head p-3 text-xs text-app-soft ring-1 ring-app">
                 <div className="font-mono">CLASSIFIC_USERNAME</div>
                 <div className="font-mono">CLASSIFIC_PASSWORD</div>
                 <div className="font-mono">CLASSIFIC_OS_LIST_URL</div>
                 <div className="font-mono">CLASSIFIC_OS_ROW_SELECTOR</div>
-                <div className="mt-2 flex items-center gap-2 text-white/55">
+                <div className="mt-2 flex items-center gap-2 text-app-soft">
                   <ArrowUpRight className="h-3.5 w-3.5" />
                   OS: ID, CLIENT, POINT, EMBARCADOS (kg), EMBARCADO_HOJE (kg). Laudos: DATE, ID, OS_ID.
                   Variáveis: CLASSIFIC_* no servidor (veja .env.example).
@@ -291,14 +282,14 @@ export default function Configuracoes() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold">Importação CSV</div>
-                  <div className="mt-1 text-xs text-white/55">
+                  <div className="mt-1 text-xs text-app-soft">
                     CSV com cabeçalho (id, date/data, cliente, ponto, toneladas/tons, rne).
                   </div>
                 </div>
                 <label
                   className={cn(
                     "inline-flex h-10 cursor-pointer items-center gap-2 rounded-2xl px-4 text-sm",
-                    "bg-white/5 ring-1 ring-white/10 transition hover:bg-white/10",
+                    "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover",
                     importing ? "opacity-40 pointer-events-none" : ""
                   )}
                 >

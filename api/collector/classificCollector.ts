@@ -27,6 +27,12 @@ const kgToTons = (kg: number): number => kg / 1000
 const slugPart = (value: string): string =>
   value.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32)
 
+const isCanceledStatus = (status: string): boolean =>
+  /\bcancelad[oa]s?\b/i.test(status) ||
+  /\bcancelled\b/i.test(status) ||
+  /\bcanceled\b/i.test(status) ||
+  /\banulad[oa]s?\b/i.test(status)
+
 const makeRneId = (args: {
   date: string
   osId: string
@@ -58,7 +64,9 @@ export type CollectorConfig = {
   laudosColOsId: number
   laudosColTonsKg?: number
   laudosColClient?: number
+  laudosColPlate?: number
   laudosColStatus?: number
+  laudosColClassifier?: number
   rneListUrl?: string
   rneRowSelector?: string
   rneColDate?: number
@@ -66,6 +74,13 @@ export type CollectorConfig = {
   rneColClient?: number
   rneColPoint?: number
   rneColClassifier?: number
+}
+
+export type ClassificCollectResult = {
+  records: OsRecord[]
+  loadSyncDates: string[]
+  rneSyncEnabled: boolean
+  rneSyncDates: string[]
 }
 
 export const loadCollectorConfigFromEnv = (): CollectorConfig | null => {
@@ -126,7 +141,9 @@ export const loadCollectorConfigFromEnv = (): CollectorConfig | null => {
     laudosColOsId,
     laudosColTonsKg: getEnvNumber('CLASSIFIC_LAUDOS_TONS_COL'),
     laudosColClient: getEnvNumber('CLASSIFIC_LAUDOS_CLIENT_COL'),
+    laudosColPlate: getEnvNumber('CLASSIFIC_LAUDOS_PLACA_COL'),
     laudosColStatus: getEnvNumber('CLASSIFIC_LAUDOS_STATUS_COL'),
+    laudosColClassifier: getEnvNumber('CLASSIFIC_LAUDOS_CLASSIFIER_COL') ?? 2,
     rneListUrl: getEnv('CLASSIFIC_RNE_LIST_URL'),
     rneRowSelector: getEnv('CLASSIFIC_RNE_ROW_SELECTOR'),
     rneColDate: getEnvNumber('CLASSIFIC_RNE_DATE_COL'),
@@ -164,7 +181,7 @@ const pickColumnIndex = (headers: string[], patterns: RegExp[]): number | undefi
 
 export type DiscoverLaudosColumnsResult = {
   headers: OsColumnInfo[]
-  suggested: { date?: number; laudoId?: number; osId?: number; tonsKg?: number }
+  suggested: { date?: number; laudoId?: number; osId?: number; tonsKg?: number; plate?: number }
   flySecretsCommand: string | null
 }
 
@@ -225,12 +242,25 @@ export const discoverLaudosColumns = async (
         pickColumnIndex(headerLabels, [/laudo/i, /^n[uú]mero$/i]) ?? cfg.laudosColId,
       osId: pickColumnIndex(headerLabels, [/n[º°°]\s*os/i, /\bos\b/i]) ?? cfg.laudosColOsId,
       tonsKg,
+      plate: pickColumnIndex(headerLabels, [/placa/i, /ve[ií]culo/i, /caminh[aã]o/i]) ?? cfg.laudosColPlate,
+      classifier:
+        pickColumnIndex(headerLabels, [/classificador/i, /classifica/i]) ??
+        cfg.laudosColClassifier,
     }
 
     const flySecretsCommand =
-      tonsKg == null
+      tonsKg == null && suggested.plate == null
         ? null
-        : `fly secrets set -a inspectcheck-dashboard-walison CLASSIFIC_LAUDOS_TONS_COL="${tonsKg}"`
+        : [
+            'fly secrets set -a inspectcheck-dashboard-walison',
+            tonsKg == null ? null : `CLASSIFIC_LAUDOS_TONS_COL="${tonsKg}"`,
+            suggested.plate == null ? null : `CLASSIFIC_LAUDOS_PLACA_COL="${suggested.plate}"`,
+            suggested.classifier == null
+              ? null
+              : `CLASSIFIC_LAUDOS_CLASSIFIER_COL="${suggested.classifier}"`,
+          ]
+            .filter(Boolean)
+            .join(' ')
 
     return { headers, suggested, flySecretsCommand }
   } finally {
@@ -313,7 +343,7 @@ export const discoverOsColumns = async (cfg: CollectorConfig): Promise<DiscoverO
   }
 }
 
-export const collectFromClassific = async (cfg: CollectorConfig): Promise<OsRecord[]> => {
+export const collectFromClassific = async (cfg: CollectorConfig): Promise<ClassificCollectResult> => {
   const { chromium } = await import('playwright')
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
   const page = await browser.newPage()
@@ -374,7 +404,10 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<OsReco
 
     const laudosRows = await page.locator(cfg.laudosRowSelector).elementHandles()
     const records: OsRecord[] = []
+    const loadSyncDates = new Set<string>([todayIso])
+    const rneSyncDates = new Set<string>()
     const osIdsWithLaudoToday = new Set<string>()
+    let rneSyncEnabled = false
 
     for (const row of laudosRows) {
       const cols = await row.$$eval('td', (tds) => tds.map((t) => (t.textContent ?? '').trim()))
@@ -383,11 +416,20 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<OsReco
       const dateRaw = cols[cfg.laudosColDate] ?? ''
       const statusRaw = cfg.laudosColStatus == null ? '' : cols[cfg.laudosColStatus] ?? ''
       const clientFromLaudos = cfg.laudosColClient == null ? '' : cols[cfg.laudosColClient] ?? ''
+      const plateRaw = cfg.laudosColPlate == null ? '' : cols[cfg.laudosColPlate] ?? ''
+      const classifierRaw =
+        cfg.laudosColClassifier == null ? '' : cols[cfg.laudosColClassifier] ?? ''
 
       const date = normalizeDateToIso(dateRaw)
       const os = osById.get(osId)
       const clientName = os?.clientName ?? clientFromLaudos
       const embarkPoint = os?.embarkPoint ?? ''
+
+      if (isIsoDate(date)) {
+        loadSyncDates.add(date)
+      }
+
+      if (statusRaw && isCanceledStatus(statusRaw)) continue
 
       let tons = 0
       if (cfg.laudosColTonsKg != null) {
@@ -410,6 +452,8 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<OsReco
         date,
         clientName,
         embarkPoint,
+        classifierName: classifierRaw ? classifierRaw : null,
+        plate: plateRaw ? plateRaw : null,
         tons,
         rne: null,
         status: statusRaw ? statusRaw : os?.status ?? null,
@@ -430,6 +474,8 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<OsReco
           date: todayIso,
           clientName: os.clientName,
           embarkPoint: os.embarkPoint,
+          classifierName: null,
+          plate: null,
           tons,
           rne: null,
           status: os.status,
@@ -445,6 +491,8 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<OsReco
       cfg.rneColClient != null &&
       cfg.rneColPoint != null
     ) {
+      rneSyncEnabled = true
+      rneSyncDates.add(todayIso)
       await page.goto(cfg.rneListUrl, { waitUntil: 'domcontentloaded' })
       await page.waitForLoadState('networkidle', { timeout: 30000 })
       await page
@@ -468,6 +516,7 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<OsReco
 
         const date = normalizeDateToIso(dateRaw)
         if (!isIsoDate(date) || !osId || !clientName || !embarkPoint) continue
+        rneSyncDates.add(date)
 
         let id = makeRneId({ date, osId, clientName, embarkPoint, classifier })
         let suffix = 0
@@ -483,6 +532,8 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<OsReco
           date,
           clientName,
           embarkPoint,
+          classifierName: classifier ? classifier : null,
+          plate: null,
           tons: 0,
           rne: 1,
           status: 'RNE',
@@ -490,7 +541,12 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<OsReco
       }
     }
 
-    return records
+    return {
+      records,
+      loadSyncDates: [...loadSyncDates],
+      rneSyncEnabled,
+      rneSyncDates: [...rneSyncDates],
+    }
   } finally {
     await page.close().catch(() => undefined)
     await browser.close().catch(() => undefined)

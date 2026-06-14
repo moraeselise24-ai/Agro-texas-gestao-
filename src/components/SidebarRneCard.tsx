@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ClipboardX } from "lucide-react";
+import FitValue from "@/components/FitValue";
 import { formatRne } from "@/lib/format";
 import { useRangeStore } from "@/stores/useRangeStore";
 import { apiGet } from "@/utils/api";
@@ -51,24 +52,24 @@ export default function SidebarRneCard() {
   return (
     <div
       className={cn(
-        "mt-6 rounded-2xl p-3 ring-1 ring-white/10",
-        "bg-gradient-to-br from-sky-500/15 via-black/20 to-black/20"
+        "mt-6 rounded-2xl p-3 ring-1 ring-app",
+        "bg-gradient-to-br from-sky-500/15 via-sky-50/80 to-emerald-50/80 dark:via-black/20 dark:to-black/20"
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-xs uppercase tracking-[0.18em] text-white/55">RNE</div>
-          <div className="mt-1 font-mono text-2xl font-semibold tracking-tight text-white">
+          <div className="text-xs uppercase tracking-[0.18em] text-app-soft">RNE</div>
+          <FitValue className="mt-1 text-app" maxRem={1.5} minRem={0.9}>
             {valueLabel}
-          </div>
-          <div className="mt-1 text-xs text-white/55">Quantidade no período</div>
-          <div className="mt-2 truncate font-mono text-[11px] text-white/45">
+          </FitValue>
+          <div className="mt-1 text-xs text-app-soft">Quantidade no período</div>
+          <div className="mt-2 truncate font-mono text-[11px] text-app-faint">
             {range.from} → {range.to}
           </div>
-          {error ? <div className="mt-2 text-xs text-rose-300/90">{error}</div> : null}
+          {error ? <div className="mt-2 text-xs text-rose-700 dark:text-rose-300/90">{error}</div> : null}
         </div>
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-sky-500/15 ring-1 ring-sky-400/25">
-          <ClipboardX className="h-4 w-4 text-sky-200/90" />
+          <ClipboardX className="h-4 w-4 text-sky-700 dark:text-sky-200/90" />
         </div>
       </div>
     </div>

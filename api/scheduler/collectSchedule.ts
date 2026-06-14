@@ -34,11 +34,15 @@ export const startCollectSchedule = (): void => {
       runCollectJob()
         .then((result) => {
           console.log(
-            `[collect-schedule] OK importados=${result.imported} laudos=${result.laudos} rne=${result.rne}`,
+            `[collect-schedule] OK importados=${result.imported} laudos=${result.laudos} rne=${result.rne} removidos_laudos=${result.removedStaleLaudos} removidos_rne=${result.removedStaleRne}`,
           )
         })
         .catch((error: unknown) => {
           const message = error instanceof Error ? error.message : String(error)
+          if (message === 'Coleta já em execução') {
+            console.log('[collect-schedule] Coleta já em execução; ignorando disparo')
+            return
+          }
           console.error(`[collect-schedule] Falha: ${message}`)
         })
     },
