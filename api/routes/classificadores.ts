@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express'
 import { collectClassificadores } from '../collector/classificadoresCollector.js'
 import { listClassificadores, upsertClassificadores } from '../repositories/classificadoresRepo.js'
+import { isHostedPanelRuntime, rejectHostedCollector } from '../utils/collectorRuntime.js'
 
 const router = Router()
 
@@ -19,6 +20,10 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 })
 
 router.post('/sync', async (_req: Request, res: Response): Promise<void> => {
+  if (isHostedPanelRuntime()) {
+    rejectHostedCollector(res)
+    return
+  }
   try {
     const items = await collectClassificadores()
     await upsertClassificadores(items)
@@ -32,4 +37,3 @@ router.post('/sync', async (_req: Request, res: Response): Promise<void> => {
 })
 
 export default router
-

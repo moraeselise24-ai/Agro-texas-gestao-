@@ -10,6 +10,7 @@ import { useRangeStore } from "@/stores/useRangeStore";
 import { apiGet, apiJson } from "@/utils/api";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/useTheme";
+import { useAuthStore } from "@/stores/useAuthStore";
 
 type Stats = {
   kpis: {
@@ -80,7 +81,11 @@ export default function Dashboard() {
   const toast = useToast();
   const { range, setRange } = useRangeStore();
   const { isDark } = useTheme();
-  const [activeTab, setActiveTab] = useState<"operacao" | "faturamento">("operacao");
+  const canAccessDashboard = useAuthStore((s) => s.canAccessDashboard);
+  const canAccessFaturamento = useAuthStore((s) => s.canAccessFaturamento);
+  const [activeTab, setActiveTab] = useState<"operacao" | "faturamento">(
+    canAccessDashboard ? "operacao" : "faturamento"
+  );
   const [loading, setLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -92,6 +97,15 @@ export default function Dashboard() {
   const [rneRecords, setRneRecords] = useState<OsRecord[]>([]);
   const [rneLoading, setRneLoading] = useState(false);
   const [rneError, setRneError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTab === "operacao" && !canAccessDashboard && canAccessFaturamento) {
+      setActiveTab("faturamento");
+    }
+    if (activeTab === "faturamento" && !canAccessFaturamento && canAccessDashboard) {
+      setActiveTab("operacao");
+    }
+  }, [activeTab, canAccessDashboard, canAccessFaturamento]);
 
   const runSync = async () => {
     setSyncLoading(true);
@@ -221,7 +235,6 @@ export default function Dashboard() {
     const points = stats?.breakdowns.byEmbarkPoint ?? [];
     const clients = stats?.breakdowns.byClient ?? [];
     const classifiers = stats?.breakdowns.byClassifier ?? [];
-    const osVolume = stats?.breakdowns.byOs ?? [];
     const rne = stats?.kpis.rneSeries ?? [];
     const tonsTooltip = {
       trigger: "axis" as const,
@@ -237,7 +250,7 @@ export default function Dashboard() {
       .slice()
       .sort((a, b) => b.revenueEstimatedBRL - a.revenueEstimatedBRL)
       .slice(0, 12);
-    const topOsVolumeData = osVolume
+    const topClientVolumeData = clients
       .slice()
       .sort((a, b) => b.tons - a.tons)
       .slice(0, 12);
@@ -498,12 +511,10 @@ export default function Dashboard() {
           formatter: (params: {
             name?: string;
             value?: number;
-            data?: { clientName?: string; embarkPoint?: string };
+            data?: { clientName?: string };
           }) => {
             const details = [
-              `<strong>${params.name ?? "O.S."}</strong>`,
-              params.data?.clientName,
-              params.data?.embarkPoint,
+              `<strong>${params.name ?? "Cliente"}</strong>`,
               `${formatTons(Number(params.value ?? 0))} t`,
             ].filter(Boolean);
             return details.join("<br/>");
@@ -549,7 +560,7 @@ export default function Dashboard() {
           top: "center",
           style: {
             text: `${formatTons(
-              topOsVolumeData.reduce((sum, item) => sum + item.tons, 0)
+              topClientVolumeData.reduce((sum, item) => sum + item.tons, 0)
             )} t`,
             textAlign: "center",
             fill: pieCenterText,
@@ -599,11 +610,9 @@ export default function Dashboard() {
                   percent == null ? "" : `${name ?? ""}\n${percent.toFixed(1)}%`,
               },
             },
-            data: topOsVolumeData.map((item) => ({
-              name: item.osId,
+            data: topClientVolumeData.map((item) => ({
+              name: item.clientName,
               value: roundTons(item.tons),
-              clientName: item.clientName,
-              embarkPoint: item.embarkPoint,
             })),
           },
         ],
@@ -818,7 +827,8 @@ export default function Dashboard() {
       </header>
 
       <div className="inline-flex rounded-2xl bg-surface-soft p-1 ring-1 ring-app">
-        <button
+        {canAccessDashboard ? (
+          <button
           type="button"
           onClick={() => setActiveTab("operacao")}
           className={cn(
@@ -831,6 +841,8 @@ export default function Dashboard() {
           <Weight className="h-4 w-4" />
           Operação
         </button>
+        ) : null}
+        {canAccessFaturamento ? (
         <button
           type="button"
           onClick={() => setActiveTab("faturamento")}
@@ -844,6 +856,7 @@ export default function Dashboard() {
           <DollarSign className="h-4 w-4" />
           Faturamento
         </button>
+        ) : null}
       </div>
 
       {activeTab === "operacao" ? (
@@ -962,18 +975,18 @@ export default function Dashboard() {
             </ChartCard>
 
             <ChartCard
-              title="Top OS por volume"
-              subtitle="Ordens de serviço com maior tonelagem no período"
+              title="Volume por cliente"
+              subtitle="Clientes com maior tonelagem no período"
               expandable={{
                 option: charts.topOsVolume,
-                chartKey: `top-os-volume-${range.from}-${range.to}-${stats?.breakdowns.byOs?.length ?? 0}`,
+                chartKey: `top-client-volume-${range.from}-${range.to}-${stats?.breakdowns.byClient?.length ?? 0}`,
               }}
             >
               <div className="h-[340px]">
                 <EChart
                   option={charts.topOsVolume}
                   height={340}
-                  chartKey={`top-os-volume-${range.from}-${range.to}-${stats?.breakdowns.byOs?.length ?? 0}`}
+                  chartKey={`top-client-volume-${range.from}-${range.to}-${stats?.breakdowns.byClient?.length ?? 0}`}
                 />
               </div>
             </ChartCard>

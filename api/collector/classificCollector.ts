@@ -24,6 +24,33 @@ const toNumber = (v: string): number => {
 
 const kgToTons = (kg: number): number => kg / 1000
 
+
+const normalizeOptionalText = (value: string | null | undefined): string | null => {
+  const v = String(value ?? '').replace(/\s+/g, ' ').trim()
+  return v ? v : null
+}
+
+const applyTemplate = (template: string, id: string): string => template.replace(/\{id\}/g, id)
+
+const extractDetailIdFromHref = (href: string | null): string | null => {
+  if (!href) return null
+  const m = href.match(/\/os\/(\d+)\/detalhar/i)
+  return m?.[1] ?? null
+}
+
+const parseLabelValueSection = (body: string): Record<string, string> => {
+  const out: Record<string, string> = {}
+  const startMatch = body.match(/Ordem de Serviço n°\s*\S+/i)
+  const section = startMatch?.index == null ? body : body.slice(startMatch.index)
+  for (const rawLine of section.split('\n')) {
+    const line = rawLine.replace(/\s+/g, ' ').trim()
+    const m = line.match(/^([^:]+):\s*(.+)$/)
+    if (!m) continue
+    out[m[1].trim()] = m[2].trim()
+  }
+  return out
+}
+
 const slugPart = (value: string): string =>
   value.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32)
 
@@ -57,6 +84,9 @@ export type CollectorConfig = {
   osColEmbarkedKg: number
   osColEmbarcadoHojeKg?: number
   osColStatus?: number
+  osColContract?: number
+  osFetchContractDetails: boolean
+  osDetailUrlTemplate: string
   laudosListUrl: string
   laudosRowSelector: string
   laudosColDate: number
@@ -134,6 +164,11 @@ export const loadCollectorConfigFromEnv = (): CollectorConfig | null => {
     osColEmbarkedKg,
     osColEmbarcadoHojeKg: getEnvNumber('CLASSIFIC_OS_EMBARCADO_HOJE_COL'),
     osColStatus: getEnvNumber('CLASSIFIC_OS_STATUS_COL'),
+    osColContract: getEnvNumber('CLASSIFIC_OS_CONTRACT_COL'),
+    osFetchContractDetails: getEnv('CLASSIFIC_OS_FETCH_CONTRACT_DETAILS') !== '0',
+    osDetailUrlTemplate:
+      getEnv('CLASSIFIC_OS_DETALHAR_URL_TEMPLATE') ??
+      `${baseUrl.replace(/\/$/, '')}/os/{id}/detalhar`,
     laudosListUrl,
     laudosRowSelector,
     laudosColDate,
@@ -169,6 +204,7 @@ export type DiscoverOsColumnsResult = {
     embarcadosTotal?: number
     embarcadoHoje?: number
     status?: number
+    contract?: number
   }
   sampleRows: Array<{ osId: string; values: string[] }>
   flySecretsCommand: string | null
@@ -320,6 +356,7 @@ export const discoverOsColumns = async (cfg: CollectorConfig): Promise<DiscoverO
         pickColumnIndex(headerLabels, [/embarcado\s*hoje/i, /hoje/i, /embarc.*hoje/i]) ??
         cfg.osColEmbarcadoHojeKg,
       status: pickColumnIndex(headerLabels, [/status/i, /situa/i]) ?? cfg.osColStatus,
+      contract: pickColumnIndex(headerLabels, [/contrato/i]) ?? cfg.osColContract,
     }
 
     const sampleRows = rowValues
@@ -332,9 +369,15 @@ export const discoverOsColumns = async (cfg: CollectorConfig): Promise<DiscoverO
 
     const hojeCol = suggested.embarcadoHoje
     const flySecretsCommand =
-      hojeCol == null
+      hojeCol == null && suggested.contract == null
         ? null
-        : `fly secrets set -a inspectcheck-dashboard-walison CLASSIFIC_OS_EMBARCADO_HOJE_COL="${hojeCol}"`
+        : [
+            'fly secrets set -a inspectcheck-dashboard-walison',
+            hojeCol == null ? null : `CLASSIFIC_OS_EMBARCADO_HOJE_COL="${hojeCol}"`,
+            suggested.contract == null ? null : `CLASSIFIC_OS_CONTRACT_COL="${suggested.contract}"`,
+          ]
+            .filter(Boolean)
+            .join(' ')
 
     return { headers, suggested, sampleRows, flySecretsCommand }
   } finally {
@@ -371,6 +414,8 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<Classi
         tonsToday: number
         tonsCumulative: number
         status: string | null
+        contractNumber: string | null
+        detailId: string | null
       }
     >()
 
@@ -383,6 +428,10 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<Classi
       const embarcadoHojeKgRaw =
         cfg.osColEmbarcadoHojeKg == null ? '' : cols[cfg.osColEmbarcadoHojeKg] ?? ''
       const statusRaw = cfg.osColStatus == null ? '' : cols[cfg.osColStatus] ?? ''
+      const contractRaw = cfg.osColContract == null ? '' : cols[cfg.osColContract] ?? ''
+      const detailHref = await row
+        .$eval('a[href*="/os/"][href*="/detalhar"]', (a) => a.getAttribute('href'))
+        .catch(() => null as string | null)
 
       if (!id || !clientName || !embarkPoint) continue
 
@@ -396,7 +445,27 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<Classi
         tonsToday,
         tonsCumulative,
         status: statusRaw ? statusRaw : null,
+        contractNumber: normalizeOptionalText(contractRaw),
+        detailId: extractDetailIdFromHref(detailHref),
       })
+    }
+
+
+    if (cfg.osFetchContractDetails) {
+      const detailTargets = [...osById.entries()].filter(([, os]) => !os.contractNumber && os.detailId)
+      for (const [, os] of detailTargets) {
+        if (!os.detailId) continue
+        try {
+          await page.goto(applyTemplate(cfg.osDetailUrlTemplate, os.detailId), { waitUntil: 'domcontentloaded' })
+          await page.waitForLoadState('networkidle', { timeout: 30000 })
+          const body = await page.locator('body').innerText()
+          const kv = parseLabelValueSection(body)
+          const contractFromText = body.match(/Contrato\s*(?:N[º°o.]*)?\s*[:#-]?\s*([A-Z0-9][A-Z0-9./-]{2,})/i)?.[1]
+          os.contractNumber = normalizeOptionalText(kv['Contrato'] ?? kv['Contrato Nº'] ?? kv['Nº Contrato'] ?? contractFromText)
+        } catch {
+          os.contractNumber = null
+        }
+      }
     }
 
     await page.goto(cfg.laudosListUrl, { waitUntil: 'domcontentloaded' })
@@ -452,6 +521,7 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<Classi
         date,
         clientName,
         embarkPoint,
+        contractNumber: os?.contractNumber ?? null,
         classifierName: classifierRaw ? classifierRaw : null,
         plate: plateRaw ? plateRaw : null,
         tons,
@@ -474,6 +544,7 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<Classi
           date: todayIso,
           clientName: os.clientName,
           embarkPoint: os.embarkPoint,
+          contractNumber: os.contractNumber,
           classifierName: null,
           plate: null,
           tons,
@@ -532,6 +603,7 @@ export const collectFromClassific = async (cfg: CollectorConfig): Promise<Classi
           date,
           clientName,
           embarkPoint,
+          contractNumber: osById.get(osId)?.contractNumber ?? null,
           classifierName: classifier ? classifier : null,
           plate: null,
           tons: 0,

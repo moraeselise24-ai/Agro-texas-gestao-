@@ -2,10 +2,15 @@ import { Router, type Request, type Response } from 'express'
 import { collectClassificadores } from '../collector/classificadoresCollector.js'
 import { upsertClassificadores } from '../repositories/classificadoresRepo.js'
 import { runCollectJob } from '../services/runCollect.js'
+import { isHostedPanelRuntime, rejectHostedCollector } from '../utils/collectorRuntime.js'
 
 const router = Router()
 
 router.post('/run', async (_req: Request, res: Response): Promise<void> => {
+  if (isHostedPanelRuntime()) {
+    rejectHostedCollector(res)
+    return
+  }
   try {
     const collectResult = await runCollectJob().catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : String(e)
@@ -30,4 +35,3 @@ router.post('/run', async (_req: Request, res: Response): Promise<void> => {
 })
 
 export default router
-

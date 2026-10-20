@@ -48,7 +48,7 @@ export default function ChartCard({
               <div className="mt-1 text-xs text-app-soft">{subtitle}</div>
             ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
             {actions}
             {expandable ? (
               <button

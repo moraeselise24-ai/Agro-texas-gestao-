@@ -18,10 +18,12 @@ type ProfileRow = {
   full_name: string | null
   role: string | null
   can_access_dashboard?: boolean | null
+  can_access_faturamento?: boolean | null
   can_access_expense_dashboard?: boolean | null
   can_access_reports?: boolean | null
   can_access_programacao?: boolean | null
   can_access_financeiro?: boolean | null
+  can_access_iris?: boolean | null
   can_manage_users?: boolean | null
   can_manage_config?: boolean | null
   last_seen_at?: string | null
@@ -35,10 +37,12 @@ type UserDto = {
   fullName: string | null
   role: string | null
   canAccessDashboard: boolean
+  canAccessFaturamento: boolean
   canAccessExpenseDashboard: boolean
   canAccessReports: boolean
   canAccessProgramacao: boolean
   canAccessFinanceiro: boolean
+  canAccessIris: boolean
   canManageUsers: boolean
   canManageConfig: boolean
   createdAt: string | null
@@ -49,10 +53,12 @@ type UserDto = {
 
 type PermissionKey =
   | 'can_access_dashboard'
+  | 'can_access_faturamento'
   | 'can_access_expense_dashboard'
   | 'can_access_reports'
   | 'can_access_programacao'
   | 'can_access_financeiro'
+  | 'can_access_iris'
   | 'can_manage_users'
   | 'can_manage_config'
 
@@ -63,10 +69,12 @@ const hasAccess = (profile: ProfileRow | undefined, key: PermissionKey): boolean
 
 const dtoPermissions = (profile: ProfileRow | undefined) => ({
   canAccessDashboard: hasAccess(profile, 'can_access_dashboard'),
+  canAccessFaturamento: hasAccess(profile, 'can_access_faturamento'),
   canAccessExpenseDashboard: hasAccess(profile, 'can_access_expense_dashboard'),
   canAccessReports: hasAccess(profile, 'can_access_reports'),
   canAccessProgramacao: hasAccess(profile, 'can_access_programacao'),
   canAccessFinanceiro: hasAccess(profile, 'can_access_financeiro'),
+  canAccessIris: hasAccess(profile, 'can_access_iris'),
   canManageUsers: hasAccess(profile, 'can_manage_users'),
   canManageConfig: hasAccess(profile, 'can_manage_config'),
 })
@@ -101,10 +109,12 @@ const upsertProfile = async (
   fullName: string | null,
   role: string | null,
   canAccessDashboard?: boolean,
+  canAccessFaturamento?: boolean,
   canAccessExpenseDashboard?: boolean,
   canAccessReports?: boolean,
   canAccessProgramacao?: boolean,
   canAccessFinanceiro?: boolean,
+  canAccessIris?: boolean,
   canManageUsers?: boolean,
   canManageConfig?: boolean
 ): Promise<void> => {
@@ -117,6 +127,7 @@ const upsertProfile = async (
     updated_at: new Date().toISOString(),
   }
   if (typeof canAccessDashboard === 'boolean') payload.can_access_dashboard = canAccessDashboard
+  if (typeof canAccessFaturamento === 'boolean') payload.can_access_faturamento = canAccessFaturamento
   if (typeof canAccessExpenseDashboard === 'boolean') {
     payload.can_access_expense_dashboard = canAccessExpenseDashboard
   }
@@ -125,6 +136,7 @@ const upsertProfile = async (
     payload.can_access_programacao = canAccessProgramacao
   }
   if (typeof canAccessFinanceiro === 'boolean') payload.can_access_financeiro = canAccessFinanceiro
+  if (typeof canAccessIris === 'boolean') payload.can_access_iris = canAccessIris
   if (typeof canManageUsers === 'boolean') payload.can_manage_users = canManageUsers
   if (typeof canManageConfig === 'boolean') payload.can_manage_config = canManageConfig
 
@@ -214,10 +226,12 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       fullName,
       role,
       canAccessDashboard,
+      canAccessFaturamento,
       canAccessExpenseDashboard,
       canAccessReports,
       canAccessProgramacao,
       canAccessFinanceiro,
+      canAccessIris,
       canManageUsers,
       canManageConfig,
     } = (req.body ?? {}) as {
@@ -226,10 +240,12 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       fullName?: string
       role?: string
       canAccessDashboard?: boolean
+      canAccessFaturamento?: boolean
       canAccessExpenseDashboard?: boolean
       canAccessReports?: boolean
       canAccessProgramacao?: boolean
       canAccessFinanceiro?: boolean
+      canAccessIris?: boolean
       canManageUsers?: boolean
       canManageConfig?: boolean
     }
@@ -260,10 +276,12 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
         full_name: trimmedFullName ?? undefined,
         role: trimmedRole ?? undefined,
         can_access_dashboard: canAccessDashboard,
+        can_access_faturamento: canAccessFaturamento,
         can_access_expense_dashboard: canAccessExpenseDashboard,
         can_access_reports: canAccessReports,
         can_access_programacao: canAccessProgramacao,
         can_access_financeiro: canAccessFinanceiro,
+        can_access_iris: canAccessIris,
         can_manage_users: canManageUsers,
         can_manage_config: canManageConfig,
       },
@@ -283,10 +301,12 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       trimmedFullName,
       trimmedRole,
       Boolean(canAccessDashboard),
+      Boolean(canAccessFaturamento),
       Boolean(canAccessExpenseDashboard),
       Boolean(canAccessReports),
       Boolean(canAccessProgramacao),
       Boolean(canAccessFinanceiro),
+      Boolean(canAccessIris),
       Boolean(canManageUsers),
       Boolean(canManageConfig)
     )
@@ -332,10 +352,12 @@ router.patch('/:id', async (req: Request, res: Response): Promise<void> => {
       role,
       password,
       canAccessDashboard,
+      canAccessFaturamento,
       canAccessExpenseDashboard,
       canAccessReports,
       canAccessProgramacao,
       canAccessFinanceiro,
+      canAccessIris,
       canManageUsers,
       canManageConfig,
     } = (req.body ?? {}) as {
@@ -343,10 +365,12 @@ router.patch('/:id', async (req: Request, res: Response): Promise<void> => {
       role?: string
       password?: string
       canAccessDashboard?: boolean
+      canAccessFaturamento?: boolean
       canAccessExpenseDashboard?: boolean
       canAccessReports?: boolean
       canAccessProgramacao?: boolean
       canAccessFinanceiro?: boolean
+      canAccessIris?: boolean
       canManageUsers?: boolean
       canManageConfig?: boolean
     }
@@ -371,10 +395,12 @@ router.patch('/:id', async (req: Request, res: Response): Promise<void> => {
       typeof fullName === 'string' ||
       typeof role === 'string' ||
       typeof canAccessDashboard === 'boolean' ||
+      typeof canAccessFaturamento === 'boolean' ||
       typeof canAccessExpenseDashboard === 'boolean' ||
       typeof canAccessReports === 'boolean' ||
       typeof canAccessProgramacao === 'boolean' ||
       typeof canAccessFinanceiro === 'boolean' ||
+      typeof canAccessIris === 'boolean' ||
       typeof canManageUsers === 'boolean' ||
       typeof canManageConfig === 'boolean'
     ) {
@@ -387,6 +413,10 @@ router.patch('/:id', async (req: Request, res: Response): Promise<void> => {
         typeof canAccessDashboard === 'boolean'
           ? canAccessDashboard
           : hasAccess(existing ?? undefined, 'can_access_dashboard')
+      const nextCanAccessFaturamento =
+        typeof canAccessFaturamento === 'boolean'
+          ? canAccessFaturamento
+          : hasAccess(existing ?? undefined, 'can_access_faturamento')
       const nextCanAccessExpenseDashboard =
         typeof canAccessExpenseDashboard === 'boolean'
           ? canAccessExpenseDashboard
@@ -403,6 +433,10 @@ router.patch('/:id', async (req: Request, res: Response): Promise<void> => {
         typeof canAccessFinanceiro === 'boolean'
           ? canAccessFinanceiro
           : hasAccess(existing ?? undefined, 'can_access_financeiro')
+      const nextCanAccessIris =
+        typeof canAccessIris === 'boolean'
+          ? canAccessIris
+          : hasAccess(existing ?? undefined, 'can_access_iris')
       const nextCanManageUsers =
         typeof canManageUsers === 'boolean'
           ? canManageUsers
@@ -418,10 +452,12 @@ router.patch('/:id', async (req: Request, res: Response): Promise<void> => {
         nextFullName,
         nextRole,
         nextCanAccessDashboard,
+        nextCanAccessFaturamento,
         nextCanAccessExpenseDashboard,
         nextCanAccessReports,
         nextCanAccessProgramacao,
         nextCanAccessFinanceiro,
+        nextCanAccessIris,
         nextCanManageUsers,
         nextCanManageConfig
       )
@@ -432,10 +468,12 @@ router.patch('/:id', async (req: Request, res: Response): Promise<void> => {
           full_name: nextFullName ?? undefined,
           role: nextRole ?? undefined,
           can_access_dashboard: nextCanAccessDashboard,
+          can_access_faturamento: nextCanAccessFaturamento,
           can_access_expense_dashboard: nextCanAccessExpenseDashboard,
           can_access_reports: nextCanAccessReports,
           can_access_programacao: nextCanAccessProgramacao,
           can_access_financeiro: nextCanAccessFinanceiro,
+          can_access_iris: nextCanAccessIris,
           can_manage_users: nextCanManageUsers,
           can_manage_config: nextCanManageConfig,
         },

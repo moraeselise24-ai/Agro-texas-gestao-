@@ -5,10 +5,15 @@ import {
   loadCollectorConfigFromEnv,
 } from '../collector/classificCollector.js'
 import { runCollectJob } from '../services/runCollect.js'
+import { isHostedPanelRuntime, rejectHostedCollector } from '../utils/collectorRuntime.js'
 
 const router = Router()
 
 router.get('/discover', async (_req: Request, res: Response): Promise<void> => {
+  if (isHostedPanelRuntime()) {
+    rejectHostedCollector(res)
+    return
+  }
   const cfg = loadCollectorConfigFromEnv()
   if (!cfg) {
     res.status(400).json({ success: false, error: 'Collector not configured' })
@@ -31,6 +36,10 @@ router.get('/discover', async (_req: Request, res: Response): Promise<void> => {
 })
 
 router.get('/discover-laudos', async (_req: Request, res: Response): Promise<void> => {
+  if (isHostedPanelRuntime()) {
+    rejectHostedCollector(res)
+    return
+  }
   const cfg = loadCollectorConfigFromEnv()
   if (!cfg) {
     res.status(400).json({ success: false, error: 'Collector not configured' })
@@ -49,6 +58,10 @@ router.get('/discover-laudos', async (_req: Request, res: Response): Promise<voi
 })
 
 router.post('/run', async (_req: Request, res: Response): Promise<void> => {
+  if (isHostedPanelRuntime()) {
+    rejectHostedCollector(res)
+    return
+  }
   try {
     const result = await runCollectJob()
     res.status(200).json({ success: true, ...result })

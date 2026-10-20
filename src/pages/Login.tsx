@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Lock, LogIn, Mail } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
 import ThemeToggle from "@/components/ThemeToggle";
+import caminhaoBg from "../../imagem/caminhao.png";
 
 export default function Login() {
   const location = useLocation();
@@ -48,18 +49,24 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-dvh bg-app text-app">
-      <div className="pointer-events-none fixed inset-0 bg-app-backdrop" />
+    <div className="relative min-h-dvh overflow-hidden bg-slate-950 text-app">
+      <img
+        src={caminhaoBg}
+        alt=""
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 h-full w-full object-cover"
+      />
+      <div className="pointer-events-none fixed inset-0 bg-slate-950/35" />
 
       <div className="relative mx-auto flex min-h-dvh max-w-[1400px] items-center px-4 py-10">
         <div className="absolute right-4 top-4">
           <ThemeToggle />
         </div>
         <div className="w-full">
-          <div className="mx-auto w-full max-w-5xl overflow-hidden rounded-[28px] bg-surface-soft ring-1 ring-app backdrop-blur">
+          <div className="mx-auto w-full max-w-5xl overflow-hidden rounded-[28px] bg-surface-soft/85 ring-1 ring-white/15 backdrop-blur-md">
             <div className="grid md:grid-cols-2">
               <div className="relative hidden md:flex">
-                <div className="absolute inset-0 bg-app-backdrop opacity-80" />
+                <div className="absolute inset-0 bg-emerald-950/45" />
                 <div className="relative flex w-full flex-col justify-between p-10">
                   <div className="space-y-6">
                     <img

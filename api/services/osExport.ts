@@ -23,6 +23,7 @@ export const buildOsXlsx = async (records: OsRecord[]): Promise<Buffer> => {
     { header: 'Data', key: 'date', width: 14 },
     { header: 'Registro', key: 'id', width: 24 },
     { header: 'OS', key: 'osId', width: 18 },
+    { header: 'Contrato', key: 'contractNumber', width: 18 },
     { header: 'Cliente', key: 'clientName', width: 34 },
     { header: 'Ponto de embarque', key: 'embarkPoint', width: 34 },
     { header: 'Classificador', key: 'classifierName', width: 24 },
@@ -37,6 +38,7 @@ export const buildOsXlsx = async (records: OsRecord[]): Promise<Buffer> => {
       date: record.date,
       id: record.id,
       osId: record.osId ?? '',
+      contractNumber: record.contractNumber ?? '',
       clientName: record.clientName,
       embarkPoint: record.embarkPoint,
       classifierName: record.classifierName ?? '',
@@ -72,6 +74,7 @@ export const buildOsPdf = async (
       (record) => `<tr>
         <td>${escapeHtml(formatReportDate(record.date))}</td>
         <td class="mono">${escapeHtml(record.osId ?? record.id)}</td>
+        <td class="mono">${escapeHtml(record.contractNumber ?? '')}</td>
         <td>${escapeHtml(record.clientName)}</td>
         <td>${escapeHtml(record.embarkPoint)}</td>
         <td>${escapeHtml(record.plate ?? '')}</td>
@@ -106,6 +109,7 @@ export const buildOsPdf = async (
           <tr>
             <th>Data</th>
             <th>OS</th>
+            <th>Contrato</th>
             <th>Cliente</th>
             <th>Ponto</th>
             <th>Placa</th>

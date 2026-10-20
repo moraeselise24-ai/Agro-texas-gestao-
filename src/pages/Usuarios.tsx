@@ -11,10 +11,12 @@ type UserRow = {
   fullName: string | null;
   role: string | null;
   canAccessDashboard: boolean;
+  canAccessFaturamento: boolean;
   canAccessExpenseDashboard: boolean;
   canAccessReports: boolean;
   canAccessProgramacao: boolean;
   canAccessFinanceiro: boolean;
+  canAccessIris: boolean;
   canManageUsers: boolean;
   canManageConfig: boolean;
   createdAt: string | null;
@@ -129,10 +131,12 @@ type EditState = {
   fullName: string;
   role: string;
   canAccessDashboard: boolean;
+  canAccessFaturamento: boolean;
   canAccessExpenseDashboard: boolean;
   canAccessReports: boolean;
   canAccessProgramacao: boolean;
   canAccessFinanceiro: boolean;
+  canAccessIris: boolean;
   canManageUsers: boolean;
   canManageConfig: boolean;
   password: string;
@@ -149,10 +153,12 @@ export default function Usuarios() {
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState("");
   const [canAccessDashboard, setCanAccessDashboard] = useState(false);
+  const [canAccessFaturamento, setCanAccessFaturamento] = useState(false);
   const [canAccessExpenseDashboard, setCanAccessExpenseDashboard] = useState(false);
   const [canAccessReports, setCanAccessReports] = useState(false);
   const [canAccessProgramacao, setCanAccessProgramacao] = useState(false);
   const [canAccessFinanceiro, setCanAccessFinanceiro] = useState(false);
+  const [canAccessIris, setCanAccessIris] = useState(false);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [canManageConfig, setCanManageConfig] = useState(false);
 
@@ -186,10 +192,12 @@ export default function Usuarios() {
           fullName,
           role,
           canAccessDashboard,
+          canAccessFaturamento,
           canAccessExpenseDashboard,
           canAccessReports,
           canAccessProgramacao,
           canAccessFinanceiro,
+          canAccessIris,
           canManageUsers,
           canManageConfig,
         },
@@ -200,10 +208,12 @@ export default function Usuarios() {
       setFullName("");
       setRole("");
       setCanAccessDashboard(false);
+      setCanAccessFaturamento(false);
       setCanAccessExpenseDashboard(false);
       setCanAccessReports(false);
       setCanAccessProgramacao(false);
       setCanAccessFinanceiro(false);
+      setCanAccessIris(false);
       setCanManageUsers(false);
       setCanManageConfig(false);
       load();
@@ -237,10 +247,12 @@ export default function Usuarios() {
       fullName: user.fullName ?? "",
       role: user.role ?? "",
       canAccessDashboard: Boolean(user.canAccessDashboard),
+      canAccessFaturamento: Boolean(user.canAccessFaturamento),
       canAccessExpenseDashboard: Boolean(user.canAccessExpenseDashboard),
       canAccessReports: Boolean(user.canAccessReports),
       canAccessProgramacao: Boolean(user.canAccessProgramacao),
       canAccessFinanceiro: Boolean(user.canAccessFinanceiro),
+      canAccessIris: Boolean(user.canAccessIris),
       canManageUsers: Boolean(user.canManageUsers),
       canManageConfig: Boolean(user.canManageConfig),
       password: "",
@@ -255,10 +267,12 @@ export default function Usuarios() {
         fullName: edit.fullName,
         role: edit.role,
         canAccessDashboard: edit.canAccessDashboard,
+        canAccessFaturamento: edit.canAccessFaturamento,
         canAccessExpenseDashboard: edit.canAccessExpenseDashboard,
         canAccessReports: edit.canAccessReports,
         canAccessProgramacao: edit.canAccessProgramacao,
         canAccessFinanceiro: edit.canAccessFinanceiro,
+        canAccessIris: edit.canAccessIris,
         canManageUsers: edit.canManageUsers,
         canManageConfig: edit.canManageConfig,
       };
@@ -335,13 +349,19 @@ export default function Usuarios() {
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             <PermissionToggle
-              label="Dashboard Operacional"
-              description="Indicadores de operação e faturamento."
+              label="Dashboard Operação"
+              description="Indicadores operacionais, volume e RNE."
               checked={canAccessDashboard}
               onChange={setCanAccessDashboard}
             />
             <PermissionToggle
-              label="Dash. Despesas"
+              label="Faturamento"
+              description="Aba de faturamento do dashboard operacional."
+              checked={canAccessFaturamento}
+              onChange={setCanAccessFaturamento}
+            />
+            <PermissionToggle
+              label="Dashboard Despesas"
               description="Indicadores e gráficos de despesas."
               checked={canAccessExpenseDashboard}
               onChange={setCanAccessExpenseDashboard}
@@ -363,6 +383,12 @@ export default function Usuarios() {
               description="Despesas, receitas e resultado."
               checked={canAccessFinanceiro}
               onChange={setCanAccessFinanceiro}
+            />
+            <PermissionToggle
+              label="Iris"
+              description="Acesso ao assistente inteligente."
+              checked={canAccessIris}
+              onChange={setCanAccessIris}
             />
             <PermissionToggle
               label="Usuários"
@@ -422,14 +448,16 @@ export default function Usuarios() {
                     <td className="px-3 py-3 text-app-muted">
                       {[
                         u.canAccessDashboard,
+                        u.canAccessFaturamento,
                         u.canAccessExpenseDashboard,
                         u.canAccessReports,
                         u.canAccessProgramacao,
                         u.canAccessFinanceiro,
+                        u.canAccessIris,
                         u.canManageUsers,
                         u.canManageConfig,
                       ].filter(Boolean).length}
-                      /7
+                      /9
                     </td>
                     <td className="px-3 py-3 font-mono text-app-muted">
                       {formatDate(u.createdAt)}
@@ -475,9 +503,9 @@ export default function Usuarios() {
       </ChartCard>
 
       {edit ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-app-overlay p-4">
-          <div className="w-full max-w-[560px] overflow-hidden rounded-3xl bg-app ring-1 ring-app-strong">
-            <div className="flex items-start justify-between gap-3 border-b border-app p-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-app-overlay p-3 sm:p-4">
+          <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-[680px] flex-col overflow-hidden rounded-3xl bg-app ring-1 ring-app-strong">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-app p-4 sm:p-5">
               <div className="min-w-0">
                 <div className="text-xs uppercase tracking-[0.18em] text-app-faint">
                   Editar usuário
@@ -495,7 +523,7 @@ export default function Usuarios() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="space-y-4 p-5">
+            <div className="space-y-4 overflow-y-auto p-4 [scrollbar-width:none] sm:p-5 [&::-webkit-scrollbar]:hidden">
               <Field
                 label="Nome completo"
                 value={edit.fullName}
@@ -507,15 +535,21 @@ export default function Usuarios() {
                 onChange={(v) => setEdit({ ...edit, role: v })}
                 placeholder="financeiro, gestor, operador..."
               />
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <PermissionToggle
-                  label="Dashboard Operacional"
-                  description="Indicadores de operação e faturamento."
+                  label="Dashboard Operação"
+                  description="Indicadores operacionais, volume e RNE."
                   checked={edit.canAccessDashboard}
                   onChange={(v) => setEdit({ ...edit, canAccessDashboard: v })}
                 />
                 <PermissionToggle
-                  label="Dash. Despesas"
+                  label="Faturamento"
+                  description="Aba de faturamento do dashboard operacional."
+                  checked={edit.canAccessFaturamento}
+                  onChange={(v) => setEdit({ ...edit, canAccessFaturamento: v })}
+                />
+                <PermissionToggle
+                  label="Dashboard Despesas"
                   description="Indicadores e gráficos de despesas."
                   checked={edit.canAccessExpenseDashboard}
                   onChange={(v) => setEdit({ ...edit, canAccessExpenseDashboard: v })}
@@ -537,6 +571,12 @@ export default function Usuarios() {
                   description="Despesas, receitas e resultado."
                   checked={edit.canAccessFinanceiro}
                   onChange={(v) => setEdit({ ...edit, canAccessFinanceiro: v })}
+                />
+                <PermissionToggle
+                  label="Iris"
+                  description="Acesso ao assistente inteligente."
+                  checked={edit.canAccessIris}
+                  onChange={(v) => setEdit({ ...edit, canAccessIris: v })}
                 />
                 <PermissionToggle
                   label="Usuários"

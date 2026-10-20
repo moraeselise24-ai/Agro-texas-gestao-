@@ -240,9 +240,6 @@ export const saveProgramacao = async (args: {
   const { error: upErr } = await sb.from('programacoes').upsert(programacaoRow, { onConflict: 'id' })
   if (upErr) throw new Error(upErr.message)
 
-  const { error: delErr } = await sb.from('programacao_itens').delete().eq('programacao_id', id)
-  if (delErr) throw new Error(delErr.message)
-
   const itensRows = args.itens.map((i) =>
     toItemRow({
       id: i.id ?? makeId(),
@@ -262,8 +259,21 @@ export const saveProgramacao = async (args: {
   )
 
   if (itensRows.length) {
-    const { error: insErr } = await sb.from('programacao_itens').insert(itensRows)
-    if (insErr) throw new Error(insErr.message)
+    const { error: upsertItemsErr } = await sb
+      .from('programacao_itens')
+      .upsert(itensRows, { onConflict: 'id' })
+    if (upsertItemsErr) throw new Error(upsertItemsErr.message)
+
+    const keepIds = itensRows.map((item) => item.id).filter(Boolean)
+    const { error: delRemovedErr } = await sb
+      .from('programacao_itens')
+      .delete()
+      .eq('programacao_id', id)
+      .not('id', 'in', `(${keepIds.join(',')})`)
+    if (delRemovedErr) throw new Error(delRemovedErr.message)
+  } else {
+    const { error: delAllErr } = await sb.from('programacao_itens').delete().eq('programacao_id', id)
+    if (delAllErr) throw new Error(delAllErr.message)
   }
 
   const saved = await getProgramacaoById(id)

@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "server:dev": "nodemon",
-    "dev": "concurrently \"npm run client:dev\" \"npm run server:dev\""
+    "dev": "concurrently \"npm run client:dev\" \"npm run server:dev\"",
+    "collect:local": "tsx api/localCollector.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
@@ -29,6 +30,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.3.0",
+    "serverless-http": "^4.0.0",
     "sqlite3": "^5.1.7",
     "tailwind-merge": "^3.0.2",
     "ws": "^8.18.3",

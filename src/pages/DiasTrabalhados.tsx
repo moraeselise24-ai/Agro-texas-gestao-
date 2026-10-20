@@ -1,10 +1,15 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   CalendarCheck,
+  CheckCircle2,
   ChevronDown,
+  CircleDollarSign,
+  Clock3,
   Download,
+  Plus,
   RefreshCw,
   Search,
+  Trash2,
   UserRoundCheck,
   Weight,
 } from "lucide-react";
@@ -15,7 +20,7 @@ import { useToast } from "@/components/ToastProvider";
 import { formatRne, formatTons } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useRangeStore } from "@/stores/useRangeStore";
-import { apiGet } from "@/utils/api";
+import { apiGet, apiJson } from "@/utils/api";
 
 type WorkedDayClassifierSummary = {
   classifierName: string;
@@ -25,6 +30,13 @@ type WorkedDayClassifierSummary = {
   tons: number;
   rneCount: number;
   osCount: number;
+  dailyRateBRL: number | null;
+  projectedPaymentBRL: number;
+  paidAmountBRL: number;
+  advanceAmountBRL: number;
+  balanceBRL: number;
+  paymentStatus: PaymentStatus;
+  payments: PaymentEntry[];
   dates: Array<{
     date: string;
     tons: number;
@@ -40,6 +52,28 @@ type WorkedDayClassifierSummary = {
   }>;
 };
 
+type PaymentStatus = "a_configurar" | "pendente" | "parcial" | "pago" | "credito";
+
+type PaymentEntry = {
+  id: string;
+  classifierName: string;
+  periodFrom: string;
+  periodTo: string;
+  amountBRL: number;
+  paidAt: string;
+  type: "pagamento" | "adiantamento";
+  notes: string | null;
+  createdByName: string | null;
+  createdAt: string | null;
+};
+
+type PaymentDraft = {
+  amountBRL: string;
+  paidAt: string;
+  type: "pagamento" | "adiantamento";
+  notes: string;
+};
+
 type WorkedDaysResponse = {
   items: WorkedDayClassifierSummary[];
   totals: {
@@ -49,7 +83,43 @@ type WorkedDaysResponse = {
     tons: number;
     rneCount: number;
     osCount: number;
+    projectedPaymentBRL: number;
+    paidAmountBRL: number;
+    balanceBRL: number;
   };
+};
+
+const currencyFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  minimumFractionDigits: 2,
+});
+
+const formatCurrency = (value: number): string => currencyFormatter.format(Number(value ?? 0));
+
+const todayIso = (): string => new Date().toISOString().slice(0, 10);
+
+const statusMeta: Record<PaymentStatus, { label: string; className: string }> = {
+  a_configurar: {
+    label: "Definir diária",
+    className: "bg-slate-500/10 text-app-muted ring-slate-500/20",
+  },
+  pendente: {
+    label: "Pendente",
+    className: "bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-200",
+  },
+  parcial: {
+    label: "Parcial",
+    className: "bg-sky-500/10 text-sky-700 ring-sky-500/20 dark:text-sky-200",
+  },
+  pago: {
+    label: "Pago",
+    className: "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-200",
+  },
+  credito: {
+    label: "Crédito",
+    className: "bg-violet-500/10 text-violet-700 ring-violet-500/20 dark:text-violet-200",
+  },
 };
 
 const formatDate = (value: string): string => {
@@ -111,11 +181,17 @@ export default function DiasTrabalhados() {
     tons: 0,
     rneCount: 0,
     osCount: 0,
+    projectedPaymentBRL: 0,
+    paidAmountBRL: 0,
+    balanceBRL: 0,
   });
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
+  const [paymentDrafts, setPaymentDrafts] = useState<Record<string, PaymentDraft>>({});
+  const [savingKey, setSavingKey] = useState<string | null>(null);
 
   const params = useMemo(() => {
     const p = new URLSearchParams();
@@ -138,6 +214,9 @@ export default function DiasTrabalhados() {
             tons: 0,
             rneCount: 0,
             osCount: 0,
+            projectedPaymentBRL: 0,
+            paidAmountBRL: 0,
+            balanceBRL: 0,
           }
         );
       })
@@ -155,6 +234,93 @@ export default function DiasTrabalhados() {
 
   const exportFile = (format: "xlsx" | "pdf") => {
     window.location.href = `/api/worked-days/export/${format}?${params}`;
+  };
+
+  const getPaymentDraft = (classifierName: string): PaymentDraft =>
+    paymentDrafts[classifierName] ?? {
+      amountBRL: "",
+      paidAt: todayIso(),
+      type: "pagamento",
+      notes: "",
+    };
+
+  const updatePaymentDraft = (classifierName: string, patch: Partial<PaymentDraft>) => {
+    setPaymentDrafts((current) => ({
+      ...current,
+      [classifierName]: { ...getPaymentDraft(classifierName), ...patch },
+    }));
+  };
+
+  const saveDailyRate = async (item: WorkedDayClassifierSummary) => {
+    const dailyRateBRL = Number(rateDrafts[item.classifierName] ?? item.dailyRateBRL ?? 0);
+    if (!Number.isFinite(dailyRateBRL) || dailyRateBRL <= 0) {
+      toast.error("Informe uma diária maior que zero.");
+      return;
+    }
+    const key = `rate:${item.classifierName}`;
+    setSavingKey(key);
+    try {
+      await apiJson(`/api/worked-days/rates/${encodeURIComponent(item.classifierName)}`, {
+        method: "PUT",
+        body: { dailyRateBRL },
+      });
+      toast.success("Diária atualizada.");
+      load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Falha ao salvar diária.");
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const savePayment = async (item: WorkedDayClassifierSummary) => {
+    const draft = getPaymentDraft(item.classifierName);
+    const amountBRL = Number(draft.amountBRL);
+    if (!Number.isFinite(amountBRL) || amountBRL <= 0 || !draft.paidAt) {
+      toast.error("Informe o valor e a data do lançamento.");
+      return;
+    }
+    const key = `payment:${item.classifierName}`;
+    setSavingKey(key);
+    try {
+      await apiJson("/api/worked-days/payments", {
+        method: "POST",
+        body: {
+          classifierName: item.classifierName,
+          periodFrom: range.from,
+          periodTo: range.to,
+          amountBRL,
+          paidAt: draft.paidAt,
+          type: draft.type,
+          notes: draft.notes,
+        },
+      });
+      setPaymentDrafts((current) => ({
+        ...current,
+        [item.classifierName]: { amountBRL: "", paidAt: todayIso(), type: "pagamento", notes: "" },
+      }));
+      toast.success("Lançamento registrado.");
+      load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Falha ao registrar lançamento.");
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const deletePayment = async (payment: PaymentEntry) => {
+    if (!window.confirm(`Excluir o lançamento de ${formatCurrency(payment.amountBRL)}?`)) return;
+    const key = `delete:${payment.id}`;
+    setSavingKey(key);
+    try {
+      await apiJson(`/api/worked-days/payments/${payment.id}`, { method: "DELETE" });
+      toast.success("Lançamento excluído.");
+      load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Falha ao excluir lançamento.");
+    } finally {
+      setSavingKey(null);
+    }
   };
 
   return (
@@ -206,6 +372,29 @@ export default function DiasTrabalhados() {
           value={formatRne(totals.rneCount)}
           detail="Lançamentos RNE"
           icon={CalendarCheck}
+          accent="amber"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <StatTile
+          label="Previsto para pagar"
+          value={formatCurrency(totals.projectedPaymentBRL)}
+          detail="Diárias configuradas no período"
+          icon={CircleDollarSign}
+          accent="sky"
+        />
+        <StatTile
+          label="Já lançado"
+          value={formatCurrency(totals.paidAmountBRL)}
+          detail="Pagamentos e adiantamentos"
+          icon={CheckCircle2}
+        />
+        <StatTile
+          label="Saldo em aberto"
+          value={formatCurrency(totals.balanceBRL)}
+          detail="Ainda falta conciliar"
+          icon={Clock3}
           accent="amber"
         />
       </div>
@@ -269,29 +458,34 @@ export default function DiasTrabalhados() {
 
         <div className="overflow-hidden rounded-2xl ring-1 ring-app">
           <div className="overflow-auto">
-            <table className="w-full min-w-[980px] text-left text-sm">
+            <table className="w-full min-w-[1420px] text-left text-sm">
               <thead className="bg-surface-soft text-xs uppercase tracking-[0.16em] text-app-soft">
                 <tr>
                   <th className="px-4 py-3">Classificador</th>
                   <th className="px-4 py-3 text-right">Dias</th>
+                  <th className="px-4 py-3 text-right">Diária</th>
+                  <th className="px-4 py-3 text-right">Previsto</th>
+                  <th className="px-4 py-3 text-right">Lançado</th>
+                  <th className="px-4 py-3 text-right">Saldo</th>
+                  <th className="px-4 py-3 text-center">Situação</th>
                   <th className="px-4 py-3 text-right">Dias volume</th>
                   <th className="px-4 py-3 text-right">Dias RNE</th>
                   <th className="px-4 py-3 text-right">Volume</th>
-                  <th className="px-4 py-3 text-right">RNE</th>
-                  <th className="px-4 py-3 text-right">O.S.</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-app">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-6 text-app-soft">
+                    <td colSpan={11} className="px-4 py-6 text-app-soft">
                       Carregando...
                     </td>
                   </tr>
                 ) : items.length ? (
                   items.map((item) => {
                     const isOpen = expanded === item.classifierName;
+                    const status = statusMeta[item.paymentStatus];
+                    const draft = getPaymentDraft(item.classifierName);
                     return (
                       <Fragment key={item.classifierName}>
                         <tr className="transition hover:bg-surface-hover">
@@ -299,11 +493,31 @@ export default function DiasTrabalhados() {
                           <td className="px-4 py-3 text-right font-mono font-semibold">
                             {formatRne(item.daysWorked)}
                           </td>
+                          <td className="px-4 py-3 text-right font-mono">
+                            {item.dailyRateBRL == null ? "-" : formatCurrency(item.dailyRateBRL)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono font-semibold">
+                            {item.dailyRateBRL == null ? "-" : formatCurrency(item.projectedPaymentBRL)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-emerald-700 dark:text-emerald-200">
+                            {formatCurrency(item.paidAmountBRL)}
+                          </td>
+                          <td
+                            className={cn(
+                              "px-4 py-3 text-right font-mono font-semibold",
+                              item.balanceBRL > 0 ? "text-amber-700 dark:text-amber-200" : "text-emerald-700 dark:text-emerald-200"
+                            )}
+                          >
+                            {item.dailyRateBRL == null ? "-" : formatCurrency(item.balanceBRL)}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={cn("inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ring-1", status.className)}>
+                              {status.label}
+                            </span>
+                          </td>
                           <td className="px-4 py-3 text-right font-mono">{formatRne(item.volumeDays)}</td>
                           <td className="px-4 py-3 text-right font-mono">{formatRne(item.rneDays)}</td>
                           <td className="px-4 py-3 text-right font-mono">{formatTons(item.tons)} t</td>
-                          <td className="px-4 py-3 text-right font-mono">{formatRne(item.rneCount)}</td>
-                          <td className="px-4 py-3 text-right font-mono">{formatRne(item.osCount)}</td>
                           <td className="px-4 py-3 text-right">
                             <button
                               type="button"
@@ -318,8 +532,162 @@ export default function DiasTrabalhados() {
                         </tr>
                         {isOpen ? (
                           <tr className="bg-surface-soft/50">
-                            <td colSpan={8} className="px-4 py-4">
-                              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                            <td colSpan={11} className="px-4 py-4">
+                              <section className="overflow-hidden rounded-xl bg-app-panel ring-1 ring-app">
+                                <div className="grid divide-y divide-app lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:divide-x lg:divide-y-0">
+                                  <div className="p-4">
+                                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-app-soft">Fechamento do período</div>
+                                    <div className="mt-4 grid grid-cols-2 gap-4">
+                                      <div>
+                                        <div className="text-xs text-app-soft">Dias apurados</div>
+                                        <div className="mt-1 font-mono text-lg font-semibold">{formatRne(item.daysWorked)}</div>
+                                      </div>
+                                      <div>
+                                        <div className="text-xs text-app-soft">Valor projetado</div>
+                                        <div className="mt-1 font-mono text-lg font-semibold">{formatCurrency(item.projectedPaymentBRL)}</div>
+                                      </div>
+                                      <div>
+                                        <div className="text-xs text-app-soft">Já pago</div>
+                                        <div className="mt-1 font-mono text-lg font-semibold text-emerald-700 dark:text-emerald-200">{formatCurrency(item.paidAmountBRL)}</div>
+                                      </div>
+                                      <div>
+                                        <div className="text-xs text-app-soft">Ainda falta</div>
+                                        <div className={cn("mt-1 font-mono text-lg font-semibold", item.balanceBRL > 0 ? "text-amber-700 dark:text-amber-200" : "text-emerald-700 dark:text-emerald-200")}>
+                                          {formatCurrency(item.balanceBRL)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {item.advanceAmountBRL > 0 ? (
+                                      <div className="mt-4 border-t border-app pt-3 text-sm text-app-soft">
+                                        Inclui {formatCurrency(item.advanceAmountBRL)} em adiantamentos.
+                                      </div>
+                                    ) : null}
+                                  </div>
+
+                                  <div className="p-4">
+                                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-app-soft">Ajustes e lançamento</div>
+                                    <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                                      <label className="block">
+                                        <span className="text-xs text-app-soft">Diária do colaborador</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          inputMode="decimal"
+                                          value={rateDrafts[item.classifierName] ?? (item.dailyRateBRL == null ? "" : String(item.dailyRateBRL))}
+                                          onChange={(event) => setRateDrafts((current) => ({ ...current, [item.classifierName]: event.target.value }))}
+                                          placeholder="0,00"
+                                          className={cn(inputClass, "mt-1 font-mono")}
+                                        />
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() => void saveDailyRate(item)}
+                                        disabled={savingKey === `rate:${item.classifierName}`}
+                                        className="inline-flex h-11 items-center justify-center gap-2 self-end rounded-xl bg-surface-soft px-4 text-sm ring-1 ring-app transition hover:bg-surface-hover disabled:opacity-50"
+                                      >
+                                        <CircleDollarSign className="h-4 w-4" />
+                                        Salvar diária
+                                      </button>
+                                    </div>
+                                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                      <label className="block">
+                                        <span className="text-xs text-app-soft">Valor do lançamento</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          inputMode="decimal"
+                                          value={draft.amountBRL}
+                                          onChange={(event) => updatePaymentDraft(item.classifierName, { amountBRL: event.target.value })}
+                                          placeholder="0,00"
+                                          className={cn(inputClass, "mt-1 font-mono")}
+                                        />
+                                      </label>
+                                      <label className="block">
+                                        <span className="text-xs text-app-soft">Data</span>
+                                        <input
+                                          type="date"
+                                          value={draft.paidAt}
+                                          onChange={(event) => updatePaymentDraft(item.classifierName, { paidAt: event.target.value })}
+                                          className={cn(inputClass, "mt-1")}
+                                        />
+                                      </label>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap items-end gap-3">
+                                      <div className="inline-flex h-10 rounded-xl bg-surface-soft p-1 ring-1 ring-app">
+                                        {(["pagamento", "adiantamento"] as const).map((type) => (
+                                          <button
+                                            key={type}
+                                            type="button"
+                                            onClick={() => updatePaymentDraft(item.classifierName, { type })}
+                                            className={cn(
+                                              "rounded-lg px-3 text-xs font-medium transition",
+                                              draft.type === type ? "bg-app-panel text-app shadow-sm ring-1 ring-app" : "text-app-muted hover:text-app"
+                                            )}
+                                          >
+                                            {type === "pagamento" ? "Pagamento" : "Adiantamento"}
+                                          </button>
+                                        ))}
+                                      </div>
+                                      <label className="min-w-[220px] flex-1">
+                                        <span className="sr-only">Observação</span>
+                                        <input
+                                          value={draft.notes}
+                                          onChange={(event) => updatePaymentDraft(item.classifierName, { notes: event.target.value })}
+                                          placeholder="Observação do lançamento"
+                                          className={inputClass}
+                                        />
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() => void savePayment(item)}
+                                        disabled={savingKey === `payment:${item.classifierName}`}
+                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                                      >
+                                        <Plus className="h-4 w-4" />
+                                        Registrar
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="border-t border-app p-4">
+                                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-app-soft">Lançamentos do período</div>
+                                  {item.payments.length ? (
+                                    <div className="mt-3 divide-y divide-app">
+                                      {item.payments.map((payment) => (
+                                        <div key={payment.id} className="flex items-center gap-3 py-3">
+                                          <div className="min-w-0 flex-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                              <span className="font-mono font-semibold">{formatCurrency(payment.amountBRL)}</span>
+                                              <span className={cn("rounded-full px-2 py-0.5 text-xs ring-1", payment.type === "adiantamento" ? "bg-sky-500/10 text-sky-700 ring-sky-500/20 dark:text-sky-200" : "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-200")}>
+                                                {payment.type === "adiantamento" ? "Adiantamento" : "Pagamento"}
+                                              </span>
+                                              <span className="text-xs text-app-soft">{formatDate(payment.paidAt)}</span>
+                                            </div>
+                                            {payment.notes ? <div className="mt-1 text-sm text-app-soft">{payment.notes}</div> : null}
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => void deletePayment(payment)}
+                                            disabled={savingKey === `delete:${payment.id}`}
+                                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-app-muted ring-1 ring-app transition hover:bg-surface-hover hover:text-red-600 disabled:opacity-50"
+                                            aria-label="Excluir lançamento"
+                                            title="Excluir lançamento"
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="mt-3 text-sm text-app-soft">Nenhum pagamento ou adiantamento lançado neste período.</div>
+                                  )}
+                                </div>
+                              </section>
+
+                              <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                                 {item.dates.map((date) => (
                                   <div
                                     key={`${item.classifierName}-${date.date}`}
@@ -370,7 +738,7 @@ export default function DiasTrabalhados() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-4 py-6 text-app-soft">
+                    <td colSpan={11} className="px-4 py-6 text-app-soft">
                       Nenhum classificador com movimentação no período.
                     </td>
                   </tr>

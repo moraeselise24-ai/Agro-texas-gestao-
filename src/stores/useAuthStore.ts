@@ -12,10 +12,12 @@ type AuthState = {
   role: string | null;
   fullName: string | null;
   canAccessDashboard: boolean;
+  canAccessFaturamento: boolean;
   canAccessExpenseDashboard: boolean;
   canAccessReports: boolean;
   canAccessProgramacao: boolean;
   canAccessFinanceiro: boolean;
+  canAccessIris: boolean;
   canManageUsers: boolean;
   canManageConfig: boolean;
   error: string | null;
@@ -45,10 +47,12 @@ const fetchOwnProfile = async (
   role: string | null;
   fullName: string | null;
   canAccessDashboard: boolean;
+  canAccessFaturamento: boolean;
   canAccessExpenseDashboard: boolean;
   canAccessReports: boolean;
   canAccessProgramacao: boolean;
   canAccessFinanceiro: boolean;
+  canAccessIris: boolean;
   canManageUsers: boolean;
   canManageConfig: boolean;
 }> => {
@@ -57,10 +61,12 @@ const fetchOwnProfile = async (
       role: null,
       fullName: null,
       canAccessDashboard: true,
+      canAccessFaturamento: true,
       canAccessExpenseDashboard: true,
       canAccessReports: true,
       canAccessProgramacao: true,
       canAccessFinanceiro: true,
+      canAccessIris: true,
       canManageUsers: true,
       canManageConfig: true,
     };
@@ -75,10 +81,12 @@ const fetchOwnProfile = async (
       role: null,
       fullName: null,
       canAccessDashboard: true,
+      canAccessFaturamento: true,
       canAccessExpenseDashboard: true,
       canAccessReports: true,
       canAccessProgramacao: true,
       canAccessFinanceiro: true,
+      canAccessIris: true,
       canManageUsers: true,
       canManageConfig: true,
     };
@@ -91,10 +99,12 @@ const fetchOwnProfile = async (
     role,
     fullName: typeof data?.full_name === "string" ? data.full_name : null,
     canAccessDashboard: boolFromProfile("can_access_dashboard"),
+    canAccessFaturamento: boolFromProfile("can_access_faturamento"),
     canAccessExpenseDashboard: boolFromProfile("can_access_expense_dashboard"),
     canAccessReports: boolFromProfile("can_access_reports"),
     canAccessProgramacao: boolFromProfile("can_access_programacao"),
     canAccessFinanceiro: boolFromProfile("can_access_financeiro"),
+    canAccessIris: boolFromProfile("can_access_iris"),
     canManageUsers: boolFromProfile("can_manage_users"),
     canManageConfig: boolFromProfile("can_manage_config"),
   };
@@ -107,10 +117,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   role: null,
   fullName: null,
   canAccessDashboard: true,
+  canAccessFaturamento: true,
   canAccessExpenseDashboard: true,
   canAccessReports: true,
   canAccessProgramacao: true,
   canAccessFinanceiro: true,
+  canAccessIris: true,
   canManageUsers: true,
   canManageConfig: true,
   error: null,
@@ -148,10 +160,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               role: null,
               fullName: null,
               canAccessDashboard: false,
+              canAccessFaturamento: false,
               canAccessExpenseDashboard: false,
               canAccessReports: false,
               canAccessProgramacao: false,
               canAccessFinanceiro: false,
+              canAccessIris: false,
               canManageUsers: false,
               canManageConfig: false,
             };
@@ -162,10 +176,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           role: profile.role,
           fullName: profile.fullName,
           canAccessDashboard: profile.canAccessDashboard,
+          canAccessFaturamento: profile.canAccessFaturamento,
           canAccessExpenseDashboard: profile.canAccessExpenseDashboard,
           canAccessReports: profile.canAccessReports,
           canAccessProgramacao: profile.canAccessProgramacao,
           canAccessFinanceiro: profile.canAccessFinanceiro,
+          canAccessIris: profile.canAccessIris,
           canManageUsers: profile.canManageUsers,
           canManageConfig: profile.canManageConfig,
           error: null,
@@ -191,10 +207,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         role: user && sameUser ? current.role : null,
         fullName: user && sameUser ? current.fullName : null,
         canAccessDashboard: user && sameUser ? current.canAccessDashboard : false,
+        canAccessFaturamento: user && sameUser ? current.canAccessFaturamento : false,
         canAccessExpenseDashboard: user && sameUser ? current.canAccessExpenseDashboard : false,
         canAccessReports: user && sameUser ? current.canAccessReports : false,
         canAccessProgramacao: user && sameUser ? current.canAccessProgramacao : false,
         canAccessFinanceiro: user && sameUser ? current.canAccessFinanceiro : false,
+        canAccessIris: user && sameUser ? current.canAccessIris : false,
         canManageUsers: user && sameUser ? current.canManageUsers : false,
         canManageConfig: user && sameUser ? current.canManageConfig : false,
         error: null,
@@ -209,10 +227,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               role: profile.role,
               fullName: profile.fullName,
               canAccessDashboard: profile.canAccessDashboard,
+              canAccessFaturamento: profile.canAccessFaturamento,
               canAccessExpenseDashboard: profile.canAccessExpenseDashboard,
               canAccessReports: profile.canAccessReports,
               canAccessProgramacao: profile.canAccessProgramacao,
               canAccessFinanceiro: profile.canAccessFinanceiro,
+              canAccessIris: profile.canAccessIris,
               canManageUsers: profile.canManageUsers,
               canManageConfig: profile.canManageConfig,
             });
@@ -232,10 +252,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         role: null,
         fullName: null,
         canAccessDashboard: true,
+        canAccessFaturamento: true,
         canAccessExpenseDashboard: true,
         canAccessReports: true,
         canAccessProgramacao: true,
         canAccessFinanceiro: true,
+        canAccessIris: true,
         canManageUsers: true,
         canManageConfig: true,
         error: null,
@@ -274,10 +296,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           role: null,
           fullName: null,
           canAccessDashboard: false,
+          canAccessFaturamento: false,
           canAccessExpenseDashboard: false,
           canAccessReports: false,
           canAccessProgramacao: false,
           canAccessFinanceiro: false,
+          canAccessIris: false,
           canManageUsers: false,
           canManageConfig: false,
         };
@@ -288,10 +312,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       role: profile.role,
       fullName: profile.fullName,
       canAccessDashboard: profile.canAccessDashboard,
+      canAccessFaturamento: profile.canAccessFaturamento,
       canAccessExpenseDashboard: profile.canAccessExpenseDashboard,
       canAccessReports: profile.canAccessReports,
       canAccessProgramacao: profile.canAccessProgramacao,
       canAccessFinanceiro: profile.canAccessFinanceiro,
+      canAccessIris: profile.canAccessIris,
       canManageUsers: profile.canManageUsers,
       canManageConfig: profile.canManageConfig,
       error: null,
@@ -312,10 +338,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       role: null,
       fullName: null,
       canAccessDashboard: false,
+      canAccessFaturamento: false,
       canAccessExpenseDashboard: false,
       canAccessReports: false,
       canAccessProgramacao: false,
       canAccessFinanceiro: false,
+      canAccessIris: false,
       canManageUsers: false,
       canManageConfig: false,
     });

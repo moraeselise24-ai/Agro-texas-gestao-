@@ -67,10 +67,12 @@ export default function Layout() {
   const fullName = useAuthStore((s) => s.fullName);
   const role = useAuthStore((s) => s.role);
   const canAccessDashboard = useAuthStore((s) => s.canAccessDashboard);
+  const canAccessFaturamento = useAuthStore((s) => s.canAccessFaturamento);
   const canAccessExpenseDashboard = useAuthStore((s) => s.canAccessExpenseDashboard);
   const canAccessReports = useAuthStore((s) => s.canAccessReports);
   const canAccessProgramacao = useAuthStore((s) => s.canAccessProgramacao);
   const canAccessFinanceiro = useAuthStore((s) => s.canAccessFinanceiro);
+  const canAccessIris = useAuthStore((s) => s.canAccessIris);
   const canManageUsers = useAuthStore((s) => s.canManageUsers);
   const canManageConfig = useAuthStore((s) => s.canManageConfig);
 
@@ -95,7 +97,9 @@ export default function Layout() {
   const displayName = fullName || user?.email || "Usuário";
   const displayEmail = user?.email && user.email !== displayName ? user.email : null;
   const displayRole = role ? role.replace(/^\w/, (c) => c.toUpperCase()) : "Acesso liberado";
-  const canAccessAnyDashboard = canAccessDashboard || canAccessExpenseDashboard;
+  const canAccessOperationalDashboard = canAccessDashboard || canAccessFaturamento;
+  const canAccessExpenseDashboardWithFinanceiro = canAccessFinanceiro && canAccessExpenseDashboard;
+  const canAccessAnyDashboard = canAccessOperationalDashboard || canAccessExpenseDashboardWithFinanceiro;
   const dashboardGroupActive = location.pathname === "/" || location.pathname === "/dashboard-despesas";
   const canAccessAnyOperation = canAccessReports || canAccessProgramacao;
   const operationGroupActive = [
@@ -138,7 +142,7 @@ export default function Layout() {
         </button>
       </div>
       <nav className="space-y-1">
-        <NavItem to="/assistente" label="Iris" icon={IrisIcon} />
+        {canAccessIris ? <NavItem to="/assistente" label="Iris" icon={IrisIcon} /> : null}
         {canAccessAnyDashboard ? (
           <div>
             <button
@@ -163,8 +167,8 @@ export default function Layout() {
             </button>
             {dashboardsOpen || dashboardGroupActive ? (
               <div className="ml-7 mt-1 space-y-1 border-l border-app pl-4">
-                {canAccessDashboard ? <NavItem to="/" label="Operacional" icon={BarChart3} /> : null}
-                {canAccessExpenseDashboard ? (
+                {canAccessOperationalDashboard ? <NavItem to="/" label="Operacional" icon={BarChart3} /> : null}
+                {canAccessExpenseDashboardWithFinanceiro ? (
                   <NavItem to="/dashboard-despesas" label="Despesas" icon={TrendingDown} />
                 ) : null}
               </div>
@@ -261,7 +265,7 @@ export default function Layout() {
         )}
       >
         {!collapsed ? (
-          <aside className="fixed left-[max(1rem,calc((100vw-1400px)/2+1rem))] top-6 z-20 hidden h-[calc(100dvh-3rem)] w-[280px] overflow-y-auto rounded-2xl bg-app-panel p-4 shadow-app ring-1 ring-app md:flex md:flex-col">
+          <aside className="fixed left-[max(1rem,calc((100vw-1400px)/2+1rem))] top-6 z-20 hidden h-[calc(100dvh-3rem)] w-[280px] overflow-y-auto rounded-2xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-app-panel p-4 shadow-app ring-1 ring-app md:flex md:flex-col">
             {sidebarContent}
           </aside>
         ) : null}
@@ -303,7 +307,7 @@ export default function Layout() {
             onClick={() => setOpen(false)}
             className="absolute inset-0 bg-app-overlay backdrop-blur-sm"
           />
-          <aside className="relative ml-0 flex h-dvh w-[280px] max-w-[85vw] flex-col overflow-y-auto bg-app p-4 ring-1 ring-app">
+          <aside className="relative ml-0 flex h-dvh w-[280px] max-w-[85vw] flex-col overflow-y-auto bg-app [scrollbar-width:none] [&::-webkit-scrollbar]:hidden p-4 ring-1 ring-app">
             {sidebarContent}
           </aside>
         </div>

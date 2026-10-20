@@ -153,16 +153,14 @@ const isLikelyPlate = (value: string): boolean => /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2
 
 const isLikelyMoney = (value: string): boolean => /^R\$\s*[\d.,]+$/i.test(value.trim())
 
-const isLtdaClientName = (value: string | null | undefined): boolean => /\bLTDA\.?$/i.test(normalizeName(value))
-
 const isLikelyClientName = (value: string | null | undefined): boolean => {
   const clean = normalizeName(value)
   if (!clean) return false
-  if (clean.length < 4) return false
+  if (clean.length < 3) return false
   if (isLikelyPlate(clean) || isLikelyMoney(clean)) return false
   if (/^\d+([.,]\d+)?$/.test(clean)) return false
   if (/^teste\s+gr[aá]tis/i.test(clean)) return false
-  if (!isLtdaClientName(clean)) return false
+  if (/^(detalhar|alterar|excluir|visualizar|selecionar)$/i.test(clean)) return false
   return /[a-zÀ-ÿ]{3,}/i.test(clean)
 }
 
@@ -175,6 +173,7 @@ const sortClients = (items: Iterable<string>): string[] => {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/,\s*[^,]+?\s+-\s*[A-Z]{2}$/i, '')
+      .replace(/\b(LTDA|S\/?A|SA|EIRELI|ME|EPP)\.?$/i, '')
       .replace(/\s+/g, ' ')
       .trim()
       .toLocaleLowerCase('pt-BR')
@@ -285,6 +284,7 @@ export const replaceServiceOrderOptionsByType = async (
 
 const rememberDraftOptions = async (input: ServiceOrderDraftInput): Promise<void> => {
   await Promise.all([
+    upsertOption('client', input.clientName),
     upsertOption('product', input.product),
     upsertOption('embark', input.embarkPoint, input.embarkPointMunicipio, input.embarkPointUf),
     upsertOption('destination', input.destination, input.destinationMunicipio, input.destinationUf),
@@ -294,7 +294,7 @@ const rememberDraftOptions = async (input: ServiceOrderDraftInput): Promise<void
 export const listServiceOrderFacets = async (): Promise<ServiceOrderFacets> => {
   const sb = getSupabase()
   const clients = new Set<string>()
-  const products = new Set<string>(['Soja'])
+  const products = new Set<string>(['Soja', 'Milho', 'Sorgo', 'Caroço de Algodão'])
   const embarks = new Map<string, ServiceOrderPlaceOption>()
   const destinations = new Map<string, ServiceOrderPlaceOption>()
 
@@ -331,6 +331,7 @@ export const listServiceOrderFacets = async (): Promise<ServiceOrderFacets> => {
 
   ;((osResult.data ?? []) as Array<{ client_name: string | null; embark_point: string | null }>).forEach(
     (row) => {
+      if (isLikelyClientName(row.client_name)) clients.add(normalizeName(row.client_name))
       addPlace(embarks, row.embark_point)
     },
   )
@@ -347,6 +348,7 @@ export const listServiceOrderFacets = async (): Promise<ServiceOrderFacets> => {
       product: string | null
     }>
   ).forEach((row) => {
+    if (isLikelyClientName(row.client_name)) clients.add(normalizeName(row.client_name))
     const product = normalizeName(row.product)
     if (product) products.add(product)
     addPlace(embarks, row.embark_point, row.embark_point_municipio, row.embark_point_uf)

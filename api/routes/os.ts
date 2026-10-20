@@ -1,11 +1,33 @@
 import { Router, type Request, type Response } from 'express'
 import { getBillingRules } from '../repositories/configRepo.js'
-import { listOsRecords, listOsRecordsByOsId } from '../repositories/osRepo.js'
+import { listContractNumbers, listOsRecords, listOsRecordsByOsId } from '../repositories/osRepo.js'
 import { estimateRevenueForRecords } from '../services/billing.js'
 import { filterMovementRecords, isRneRecord } from '../services/movement.js'
 import { dedupeVolumeByOsDay } from '../services/volume.js'
+import { getRequestPermissions } from '../utils/requestUser.js'
 
 const router = Router()
+
+
+router.get('/contracts', async (req: Request, res: Response): Promise<void> => {
+  const from = String(req.query.from ?? '')
+  const to = String(req.query.to ?? '')
+  const q = req.query.q ? String(req.query.q) : undefined
+  const client = req.query.client ? String(req.query.client) : undefined
+  const point = req.query.point ? String(req.query.point) : undefined
+  const typeRaw = req.query.type ? String(req.query.type) : 'all'
+  const type = ['all', 'loads', 'rne'].includes(typeRaw)
+    ? (typeRaw as 'all' | 'loads' | 'rne')
+    : 'all'
+
+  if (!from || !to) {
+    res.status(400).json({ success: false, error: 'Missing from/to' })
+    return
+  }
+
+  const contracts = await listContractNumbers({ from, to, q, client, point, type })
+  res.status(200).json({ success: true, contracts })
+})
 
 router.get('/:osId/details', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -26,6 +48,7 @@ router.get('/:osId/details', async (req: Request, res: Response): Promise<void> 
     const tonsTotal = volumeRecords.reduce((sum, record) => sum + (Number(record.tons ?? 0) || 0), 0)
     const rneCount = records.filter((record) => isRneRecord(record)).length
     const first = records[0] ?? null
+    const permissions = await getRequestPermissions(req)
 
     res.status(200).json({
       success: true,
@@ -35,8 +58,8 @@ router.get('/:osId/details', async (req: Request, res: Response): Promise<void> 
         embarkPoint: first?.embarkPoint ?? null,
         tonsTotal,
         rneCount,
-        revenueEstimatedBRL: revenue.revenueEstimatedBRL,
-        dailyFeeCount: revenue.dailyFeeCount,
+        revenueEstimatedBRL: permissions.canAccessFaturamento ? revenue.revenueEstimatedBRL : 0,
+        dailyFeeCount: permissions.canAccessFaturamento ? revenue.dailyFeeCount : 0,
         records,
       },
     })
@@ -54,6 +77,9 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
   const q = req.query.q ? String(req.query.q) : undefined
   const client = req.query.client ? String(req.query.client) : undefined
   const point = req.query.point ? String(req.query.point) : undefined
+  const contract = req.query.contract ? String(req.query.contract) : undefined
+  const sortRaw = req.query.sort ? String(req.query.sort) : 'date'
+  const sort = sortRaw === 'contract' ? 'contract' : 'date'
   const typeRaw = req.query.type ? String(req.query.type) : 'all'
   const type = ['all', 'loads', 'rne'].includes(typeRaw)
     ? (typeRaw as 'all' | 'loads' | 'rne')
@@ -72,7 +98,9 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     q,
     client,
     point,
+    contract,
     type,
+    sort,
     page: Number.isFinite(page) && page > 0 ? page : 1,
     pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 200) : 25,
   })

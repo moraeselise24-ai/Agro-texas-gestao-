@@ -149,7 +149,7 @@ const uniq = (items: string[]) =>
     a.localeCompare(b, "pt-BR")
   );
 
-const isLtdaClientName = (value: string) => /\bLTDA\.?$/i.test(value.trim());
+const defaultProductOptions = ["Soja", "Milho", "Sorgo", "Caroço de Algodão"];
 
 const stateOptions = [
   { code: "AC", name: "Acre" },
@@ -371,15 +371,15 @@ export default function OrdensServico() {
   const [page, setPage] = useState(1);
   const [facets, setFacets] = useState<ServiceOrderFacets>({
     clients: [],
-    products: ["Soja"],
+    products: defaultProductOptions,
     embarks: [],
     destinations: [],
   });
   const [classificadores, setClassificadores] = useState<Classificador[]>([]);
   const pageSize = 12;
 
-  const clientOptions = useMemo(() => uniq(facets.clients).filter(isLtdaClientName), [facets.clients]);
-  const productOptions = useMemo(() => uniq(["Soja", ...facets.products]), [facets.products]);
+  const clientOptions = useMemo(() => uniq(facets.clients), [facets.clients]);
+  const productOptions = useMemo(() => uniq([...defaultProductOptions, ...facets.products]), [facets.products]);
   const classifierOptions = useMemo(
     () => uniq(classificadores.filter((item) => item.ativo !== false).map((item) => item.nome)),
     [classificadores]

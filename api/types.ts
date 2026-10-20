@@ -13,6 +13,7 @@ export type BillingRules = {
 export type OsRecord = {
   id: string
   osId?: string | null
+  contractNumber?: string | null
   date: string
   clientName: string
   embarkPoint: string
@@ -246,6 +247,31 @@ export type WorkedDayClassifierSummary = {
   }>
 }
 
+export type ClassifierPaymentType = 'pagamento' | 'adiantamento'
+
+export type ClassifierPaymentEntry = {
+  id: string
+  classifierName: string
+  periodFrom: string
+  periodTo: string
+  amountBRL: number
+  paidAt: string
+  type: ClassifierPaymentType
+  notes: string | null
+  createdByName: string | null
+  createdAt: string | null
+}
+
+export type WorkedDayCompensation = {
+  dailyRateBRL: number | null
+  projectedPaymentBRL: number
+  paidAmountBRL: number
+  advanceAmountBRL: number
+  balanceBRL: number
+  paymentStatus: 'a_configurar' | 'pendente' | 'parcial' | 'pago' | 'credito'
+  payments: ClassifierPaymentEntry[]
+}
+
 export type WorkedDaysTotals = {
   classifiers: number
   daysWorked: number
@@ -253,4 +279,7 @@ export type WorkedDaysTotals = {
   tons: number
   rneCount: number
   osCount: number
+  projectedPaymentBRL?: number
+  paidAmountBRL?: number
+  balanceBRL?: number
 }

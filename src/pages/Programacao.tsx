@@ -169,6 +169,8 @@ export default function Programacao() {
 
   const [newClassificadorId, setNewClassificadorId] = useState("");
   const [newOsId, setNewOsId] = useState("");
+  const [osPickerOpen, setOsPickerOpen] = useState(false);
+  const [osSearch, setOsSearch] = useState("");
   const [osDetalhe, setOsDetalhe] = useState<OsDetalhe | null>(null);
   const [osDetalheLoading, setOsDetalheLoading] = useState(false);
 
@@ -205,6 +207,20 @@ export default function Programacao() {
   const selectedOs = useMemo(() => {
     return osAtivas.find((o) => o.osId === newOsId) ?? null;
   }, [newOsId, osAtivas]);
+
+  const filteredOsAtivas = useMemo(() => {
+    const query = osSearch.trim().toLowerCase();
+    const source = query
+      ? osAtivas.filter((o) =>
+          [o.osId, o.clientName, o.embarkPoint, o.destino, o.status]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(query)
+        )
+      : osAtivas;
+    return source.slice(0, 80);
+  }, [osAtivas, osSearch]);
 
   useEffect(() => {
     return () => {
@@ -393,6 +409,7 @@ export default function Programacao() {
 
     setNewClassificadorId("");
     setNewOsId("");
+    setOsSearch("");
   };
 
   const save = async () => {
@@ -607,6 +624,8 @@ export default function Programacao() {
   };
 
   const historyTotalPages = Math.max(1, Math.ceil(historyTotal / historyPageSize));
+  const formatKg = (value: number | null | undefined): string =>
+    value == null ? "—" : new Intl.NumberFormat("pt-BR").format(value);
 
   return (
     <div className="space-y-6">
@@ -624,13 +643,13 @@ export default function Programacao() {
         title="Edição"
         subtitle="Selecione a data e adicione linhas para salvar a programação"
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
             <input
               type="date"
               value={data}
               onChange={(e) => setData(e.target.value)}
               className={cn(
-                "h-10 rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                "h-12 w-full rounded-2xl bg-surface-soft px-3 text-base text-app sm:h-10 sm:w-auto sm:text-sm",
                 "outline-none ring-1 ring-app focus:ring-app-strong"
               )}
             />
@@ -638,7 +657,7 @@ export default function Programacao() {
               type="button"
               disabled={saving || loading || importing}
               className={cn(
-                "inline-flex h-10 items-center gap-2 rounded-2xl px-4 text-sm",
+                "inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-base sm:h-10 sm:w-auto sm:text-sm",
                 "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover",
                 "disabled:opacity-40"
               )}
@@ -651,7 +670,7 @@ export default function Programacao() {
               type="button"
               disabled={saving || loading}
               className={cn(
-                "inline-flex h-10 items-center gap-2 rounded-2xl px-4 text-sm",
+                "inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-base sm:h-10 sm:w-auto sm:text-sm",
                 "bg-emerald-500/15 text-emerald-800 dark:text-emerald-100 ring-1 ring-emerald-500/25 transition hover:bg-emerald-500/20",
                 "disabled:opacity-40"
               )}
@@ -663,7 +682,7 @@ export default function Programacao() {
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-6">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-6">
             <div className="lg:col-span-2">
               <div className="mb-1 text-xs text-app-soft">Classificador</div>
               <div className="flex items-center gap-2">
@@ -672,7 +691,7 @@ export default function Programacao() {
                   onChange={(e) => setNewClassificadorId(e.target.value)}
                   disabled={classificadoresLoading}
                   className={cn(
-                    "h-10 w-full rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                    "h-12 w-full rounded-2xl bg-surface-soft px-3 text-base text-app sm:h-10 sm:text-sm",
                     "outline-none ring-1 ring-app focus:ring-app-strong"
                   )}
                 >
@@ -687,7 +706,7 @@ export default function Programacao() {
                   type="button"
                   disabled={classificadoresLoading}
                   className={cn(
-                    "inline-flex h-10 w-10 items-center justify-center rounded-2xl",
+                    "inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl sm:h-10 sm:w-10",
                     "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover",
                     "disabled:opacity-40"
                   )}
@@ -708,7 +727,7 @@ export default function Programacao() {
                   onChange={(e) => setNewOsId(e.target.value)}
                   disabled={osAtivasLoading}
                   className={cn(
-                    "h-10 w-full rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                    "hidden h-10 w-full rounded-2xl bg-surface-soft px-3 text-sm text-app md:block",
                     "outline-none ring-1 ring-app focus:ring-app-strong"
                   )}
                 >
@@ -725,8 +744,32 @@ export default function Programacao() {
                 <button
                   type="button"
                   disabled={osAtivasLoading}
+                  onClick={() => {
+                    setOsPickerOpen(true);
+                    if (!osAtivas.length && !osAtivasLoading) {
+                      loadOsAtivas().catch(() => undefined);
+                    }
+                  }}
                   className={cn(
-                    "inline-flex h-10 w-10 items-center justify-center rounded-2xl",
+                    "flex h-12 min-w-0 flex-1 items-center justify-between gap-3 rounded-2xl bg-surface-soft px-3 text-left text-base text-app ring-1 ring-app md:hidden",
+                    "disabled:opacity-40"
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">
+                      {selectedOs ? selectedOs.osId : "Escolher O.S."}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-app-soft">
+                      {selectedOs?.clientName ?? "Toque para buscar por OS, cliente ou local"}
+                    </span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-app-soft" />
+                </button>
+                <button
+                  type="button"
+                  disabled={osAtivasLoading}
+                  className={cn(
+                    "inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl sm:h-10 sm:w-10",
                     "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover",
                     "disabled:opacity-40"
                   )}
@@ -746,7 +789,7 @@ export default function Programacao() {
                 readOnly
                 placeholder="Cliente da O.S."
                 className={cn(
-                  "h-10 w-full rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                  "h-12 w-full rounded-2xl bg-surface-soft px-3 text-base text-app sm:h-10 sm:text-sm",
                   "outline-none ring-1 ring-app focus:ring-app-strong"
                 )}
               />
@@ -759,7 +802,7 @@ export default function Programacao() {
                 readOnly
                 placeholder="Ex.: Ponto de embarque"
                 className={cn(
-                  "h-10 w-full rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                  "h-12 w-full rounded-2xl bg-surface-soft px-3 text-base text-app sm:h-10 sm:text-sm",
                   "outline-none ring-1 ring-app focus:ring-app-strong"
                 )}
               />
@@ -775,7 +818,7 @@ export default function Programacao() {
                 }
                 readOnly
                 className={cn(
-                  "h-10 w-full rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                  "h-12 w-full rounded-2xl bg-surface-soft px-3 text-base text-app sm:h-10 sm:text-sm",
                   "outline-none ring-1 ring-app focus:ring-app-strong"
                 )}
               />
@@ -786,7 +829,7 @@ export default function Programacao() {
                 value={displayOs?.embarkPoint ?? ""}
                 readOnly
                 className={cn(
-                  "h-10 w-full rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                  "h-12 w-full rounded-2xl bg-surface-soft px-3 text-base text-app sm:h-10 sm:text-sm",
                   "outline-none ring-1 ring-app focus:ring-app-strong"
                 )}
               />
@@ -797,7 +840,7 @@ export default function Programacao() {
                 value={displayOs?.loteKg == null ? "" : String(displayOs.loteKg)}
                 readOnly
                 className={cn(
-                  "h-10 w-full rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                  "h-12 w-full rounded-2xl bg-surface-soft px-3 text-base text-app sm:h-10 sm:text-sm",
                   "outline-none ring-1 ring-app focus:ring-app-strong"
                 )}
               />
@@ -808,7 +851,7 @@ export default function Programacao() {
                 value={displayOs?.embarcadosKg == null ? "" : String(displayOs.embarcadosKg)}
                 readOnly
                 className={cn(
-                  "h-10 w-full rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                  "h-12 w-full rounded-2xl bg-surface-soft px-3 text-base text-app sm:h-10 sm:text-sm",
                   "outline-none ring-1 ring-app focus:ring-app-strong"
                 )}
               />
@@ -829,7 +872,7 @@ export default function Programacao() {
                 }
                 readOnly
                 className={cn(
-                  "h-10 w-full rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                  "h-12 w-full rounded-2xl bg-surface-soft px-3 text-base text-app sm:h-10 sm:text-sm",
                   "outline-none ring-1 ring-app focus:ring-app-strong"
                 )}
               />
@@ -841,14 +884,14 @@ export default function Programacao() {
                   value={displayOs?.produto ?? ""}
                   readOnly
                   className={cn(
-                    "h-10 w-full rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                    "h-12 w-full rounded-2xl bg-surface-soft px-3 text-base text-app sm:h-10 sm:text-sm",
                     "outline-none ring-1 ring-app focus:ring-app-strong"
                   )}
                 />
                 <button
                   type="button"
                   className={cn(
-                    "inline-flex h-10 items-center gap-2 rounded-2xl px-4 text-sm",
+                    "inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-base sm:h-10 sm:w-auto sm:text-sm",
                     "bg-surface-soft ring-1 ring-app transition hover:bg-surface-hover"
                   )}
                   onClick={addItem}
@@ -860,7 +903,94 @@ export default function Programacao() {
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl ring-1 ring-app">
+          <div className="space-y-2 md:hidden">
+            {loading ? (
+              <div className="rounded-2xl bg-surface-soft p-3 text-sm text-app-soft ring-1 ring-app">
+                Carregando...
+              </div>
+            ) : itens.length ? (
+              itens.map((i, index) => (
+                <div key={i.id} className="rounded-2xl bg-surface-soft p-3 ring-1 ring-app">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="shrink-0 rounded-full bg-app/70 px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] text-app-faint ring-1 ring-app">
+                          {index + 1}
+                        </span>
+                        <span className="truncate font-mono text-base font-semibold text-app">{i.osId}</span>
+                      </div>
+                      <div className="mt-1 truncate text-xs text-app-soft">{i.produto ?? "Produto não informado"}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-500/12 text-rose-800 ring-1 ring-rose-500/20 transition active:scale-[0.98] dark:text-rose-100"
+                      aria-label="Remover"
+                      title="Remover"
+                      onClick={() => removeItem(i.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="mt-3">
+                    <div className="mb-1 text-[11px] uppercase tracking-[0.12em] text-app-faint">Classificador</div>
+                    <input
+                      value={i.classificadorNome}
+                      onChange={(e) => updateItem(i.id, { classificadorNome: e.target.value })}
+                      className={cn(
+                        "h-10 w-full rounded-xl bg-app px-3 text-sm text-app",
+                        "outline-none ring-1 ring-app focus:ring-app-strong"
+                      )}
+                    />
+                  </div>
+
+                  <div className="mt-3 space-y-2 text-sm">
+                    <div className="flex gap-2 rounded-xl bg-app/60 p-2.5 ring-1 ring-app">
+                      <span className="w-20 shrink-0 text-[11px] uppercase tracking-[0.12em] text-app-faint">Cliente</span>
+                      <span className="min-w-0 flex-1 text-app">{i.cliente ?? "—"}</span>
+                    </div>
+                    <div className="flex gap-2 rounded-xl bg-app/60 p-2.5 ring-1 ring-app">
+                      <span className="w-20 shrink-0 text-[11px] uppercase tracking-[0.12em] text-app-faint">Embarque</span>
+                      <span className="min-w-0 flex-1 text-app">{i.localEmbarque || "—"}</span>
+                    </div>
+                    <div className="flex gap-2 rounded-xl bg-app/60 p-2.5 ring-1 ring-app">
+                      <span className="w-20 shrink-0 text-[11px] uppercase tracking-[0.12em] text-app-faint">Destino</span>
+                      <span className="min-w-0 flex-1 text-app">{i.destino ?? "—"}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    <div className="rounded-xl bg-app/60 p-2.5 ring-1 ring-app">
+                      <div className="text-[11px] uppercase tracking-[0.12em] text-app-faint">Lote</div>
+                      <div className="mt-1 font-mono text-sm text-app">{formatKg(i.volumeOs)}</div>
+                    </div>
+                    <div className="rounded-xl bg-app/60 p-2.5 ring-1 ring-app">
+                      <div className="text-[11px] uppercase tracking-[0.12em] text-app-faint">Emb.</div>
+                      <div className="mt-1 font-mono text-sm text-app">{formatKg(i.volumeEmbarcado)}</div>
+                    </div>
+                    <div className="rounded-xl bg-app/60 p-2.5 ring-1 ring-app">
+                      <div className="text-[11px] uppercase tracking-[0.12em] text-app-faint">Rem.</div>
+                      <div className="mt-1 font-mono text-sm text-app">
+                        {formatKg(
+                          effectiveRemanescenteKg({
+                            loteKg: i.volumeOs,
+                            embarcadosKg: i.volumeEmbarcado,
+                            remanescenteKg: i.volumeRemanescente,
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-2xl bg-surface-soft p-3 text-sm text-app-soft ring-1 ring-app">
+                Sem itens para a data.
+              </div>
+            )}
+          </div>
+
+          <div className="hidden overflow-hidden rounded-2xl ring-1 ring-app md:block">
             <div className="overflow-auto">
               <table className="min-w-[1250px] w-full text-left text-sm">
                 <thead className="bg-table-head text-xs uppercase tracking-[0.16em] text-app-soft">
@@ -967,7 +1097,101 @@ export default function Programacao() {
           </button>
         }
       >
-        <div className="overflow-hidden rounded-2xl ring-1 ring-app">
+        <div className="space-y-2 md:hidden">
+          {historyLoading ? (
+            <div className="rounded-2xl bg-surface-soft p-3 text-sm text-app-soft ring-1 ring-app">
+              Carregando...
+            </div>
+          ) : history.length ? (
+            history.map((h) => (
+              <div key={h.id} className="rounded-2xl bg-surface-soft p-3 ring-1 ring-app">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="truncate font-mono text-base font-semibold text-app">{h.data}</div>
+                      {h.importSourceDate ? (
+                        <span className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-800 ring-1 ring-emerald-500/20 dark:text-emerald-100">
+                          Importada
+                        </span>
+                      ) : (
+                        <span className="shrink-0 rounded-full bg-app/70 px-2 py-0.5 text-[11px] text-app-soft ring-1 ring-app">
+                          Manual
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 truncate text-xs text-app-soft">
+                      {h.importSourceDate ? `Referência: ${h.importSourceDate}` : "Referência manual"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-6 gap-1.5">
+                  <button
+                    type="button"
+                    className="inline-flex h-10 items-center justify-center rounded-xl bg-surface-hover ring-1 ring-app transition active:scale-[0.98] disabled:opacity-50"
+                    disabled={previewLoading}
+                    onClick={() => previewPdf(h.id, h.data).catch((e) => toast.error(String(e)))}
+                    aria-label="Visualizar"
+                    title="Visualizar"
+                  >
+                    <Eye className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-10 items-center justify-center rounded-xl bg-surface-hover ring-1 ring-app transition active:scale-[0.98]"
+                    onClick={() => openDuplicateModal({ id: h.id, data: h.data })}
+                    aria-label="Duplicar"
+                    title="Duplicar"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-10 items-center justify-center rounded-xl bg-app/70 ring-1 ring-app transition active:scale-[0.98]"
+                    onClick={() => exportPdf(h.id, h.data).catch((e) => toast.error(String(e)))}
+                    aria-label="Baixar PDF"
+                    title="Baixar PDF"
+                  >
+                    <PdfIcon className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-10 items-center justify-center rounded-xl bg-app/70 ring-1 ring-app transition active:scale-[0.98]"
+                    onClick={() => exportPng(h.id, h.data).catch((e) => toast.error(String(e)))}
+                    aria-label="Baixar imagem"
+                    title="Baixar imagem"
+                  >
+                    <Image className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-10 items-center justify-center rounded-xl bg-app/70 ring-1 ring-app transition active:scale-[0.98]"
+                    onClick={() => exportXlsx(h.id, h.data).catch((e) => toast.error(String(e)))}
+                    aria-label="Baixar Excel"
+                    title="Baixar Excel"
+                  >
+                    <Sheet className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-10 items-center justify-center rounded-xl bg-rose-500/12 text-rose-800 ring-1 ring-rose-500/20 transition active:scale-[0.98] dark:text-rose-100"
+                    onClick={() => deleteHistory(h.id).catch(() => undefined)}
+                    aria-label="Excluir"
+                    title="Excluir"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl bg-surface-soft p-3 text-sm text-app-soft ring-1 ring-app">
+              Sem programações salvas.
+            </div>
+          )}
+        </div>
+
+        <div className="hidden overflow-hidden rounded-2xl ring-1 ring-app md:block">
           <div className="overflow-auto">
             <table className="min-w-[700px] w-full text-left text-sm">
               <thead className="bg-table-head text-xs uppercase tracking-[0.16em] text-app-soft">
@@ -1099,14 +1323,14 @@ export default function Programacao() {
           <div>
             {historyTotal} programação(ões) · página {Math.min(historyPage, historyTotalPages)} de {historyTotalPages}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center">
             <select
               value={historyPageSize}
               onChange={(e) => {
                 setHistoryPageSize(Number(e.target.value));
                 setHistoryPage(1);
               }}
-              className="h-9 rounded-xl bg-surface-soft px-3 text-sm ring-1 ring-app outline-none"
+              className="col-span-2 h-11 rounded-xl bg-surface-soft px-3 text-sm ring-1 ring-app outline-none md:col-span-1 md:h-9"
             >
               <option value={10}>10 por página</option>
               <option value={25}>25 por página</option>
@@ -1116,7 +1340,7 @@ export default function Programacao() {
               type="button"
               disabled={historyPage <= 1 || historyLoading}
               onClick={() => setHistoryPage((prev) => Math.max(1, prev - 1))}
-              className="inline-flex h-9 items-center gap-2 rounded-xl bg-surface-soft px-3 ring-1 ring-app transition hover:bg-surface-hover disabled:opacity-50"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-surface-soft px-3 ring-1 ring-app transition hover:bg-surface-hover disabled:opacity-50 md:h-9"
             >
               <ChevronLeft className="h-4 w-4" />
               Anterior
@@ -1125,7 +1349,7 @@ export default function Programacao() {
               type="button"
               disabled={historyPage >= historyTotalPages || historyLoading}
               onClick={() => setHistoryPage((prev) => Math.min(historyTotalPages, prev + 1))}
-              className="inline-flex h-9 items-center gap-2 rounded-xl bg-surface-soft px-3 ring-1 ring-app transition hover:bg-surface-hover disabled:opacity-50"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-surface-soft px-3 ring-1 ring-app transition hover:bg-surface-hover disabled:opacity-50 md:h-9"
             >
               Próxima
               <ChevronRight className="h-4 w-4" />
@@ -1133,6 +1357,89 @@ export default function Programacao() {
           </div>
         </div>
       </ChartCard>
+
+
+      {osPickerOpen ? (
+        <div className="fixed inset-0 z-50 flex flex-col bg-app md:hidden" role="dialog" aria-modal="true">
+          <div className="pointer-events-none absolute inset-0 bg-app-backdrop" />
+          <div className="relative flex min-h-0 flex-1 flex-col px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-[max(env(safe-area-inset-top),1rem)]">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-app pb-3">
+              <div className="min-w-0">
+                <div className="text-xs uppercase tracking-[0.18em] text-app-faint">Selecionar O.S.</div>
+                <div className="mt-1 text-xl font-semibold">O.S. abertas</div>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-surface-soft ring-1 ring-app"
+                onClick={() => setOsPickerOpen(false)}
+                aria-label="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <input
+              value={osSearch}
+              onChange={(e) => setOsSearch(e.target.value)}
+              placeholder="Buscar OS, cliente ou local"
+              className={cn(
+                "mt-4 h-12 w-full shrink-0 rounded-2xl bg-surface-soft px-4 text-base text-app",
+                "outline-none ring-1 ring-app focus:ring-app-strong"
+              )}
+              autoFocus
+            />
+
+            <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {osAtivasLoading ? (
+                <div className="rounded-2xl bg-surface-soft p-4 text-sm text-app-soft ring-1 ring-app">Carregando O.S...</div>
+              ) : filteredOsAtivas.length ? (
+                filteredOsAtivas.map((o) => (
+                  <button
+                    key={o.osId}
+                    type="button"
+                    onClick={() => {
+                      setNewOsId(o.osId);
+                      setOsSearch("");
+                      setOsPickerOpen(false);
+                    }}
+                    className={cn(
+                      "w-full rounded-2xl p-3 text-left ring-1 transition active:scale-[0.99]",
+                      newOsId === o.osId
+                        ? "bg-emerald-500/15 ring-emerald-500/30"
+                        : "bg-surface-soft ring-app active:bg-surface-hover"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate font-mono text-base font-semibold text-app">{o.osId}</div>
+                        <div className="mt-1 truncate text-sm text-app">{o.clientName ?? "Cliente não informado"}</div>
+                        <div className="mt-1 line-clamp-2 text-xs text-app-soft">{o.embarkPoint ?? "Local não informado"}</div>
+                      </div>
+                      {o.status ? (
+                        <span className="shrink-0 rounded-full bg-app/70 px-2.5 py-1 text-[11px] text-app-soft ring-1 ring-app">
+                          {o.status}
+                        </span>
+                      ) : null}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="rounded-2xl bg-surface-soft p-4 text-sm text-app-soft ring-1 ring-app">
+                  Nenhuma O.S. encontrada.
+                  <button
+                    type="button"
+                    className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-surface-hover px-3 text-sm ring-1 ring-app"
+                    onClick={() => loadOsAtivas().catch(() => undefined)}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Recarregar O.S.
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {preview ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-app-overlay p-4">

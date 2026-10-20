@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS public.os_records (
   id text PRIMARY KEY,
   os_id text,
+  contract_number text,
   date date NOT NULL,
   client_name text NOT NULL,
   embark_point text NOT NULL,
@@ -12,11 +13,13 @@ CREATE TABLE IF NOT EXISTS public.os_records (
 );
 
 ALTER TABLE public.os_records ADD COLUMN IF NOT EXISTS os_id text;
+ALTER TABLE public.os_records ADD COLUMN IF NOT EXISTS contract_number text;
 ALTER TABLE public.os_records ADD COLUMN IF NOT EXISTS classifier_name text;
 ALTER TABLE public.os_records ADD COLUMN IF NOT EXISTS plate text;
 
 CREATE INDEX IF NOT EXISTS idx_os_records_date ON public.os_records(date);
 CREATE INDEX IF NOT EXISTS idx_os_records_os_id ON public.os_records(os_id);
+CREATE INDEX IF NOT EXISTS idx_os_records_contract ON public.os_records(contract_number);
 CREATE INDEX IF NOT EXISTS idx_os_records_plate ON public.os_records(plate);
 CREATE INDEX IF NOT EXISTS idx_os_records_client ON public.os_records(client_name);
 CREATE INDEX IF NOT EXISTS idx_os_records_point ON public.os_records(embark_point);
@@ -34,6 +37,30 @@ INSERT INTO public.billing_rules (id, daily_fee_brl, base_tariff_brl_per_ton, mi
 VALUES (1, 400, 2, 200, 2)
 ON CONFLICT (id) DO NOTHING;
 
+CREATE TABLE IF NOT EXISTS public.classifier_daily_rates (
+  classifier_name text PRIMARY KEY,
+  daily_rate_brl double precision NOT NULL CHECK (daily_rate_brl > 0),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.classifier_payment_entries (
+  id text PRIMARY KEY,
+  classifier_name text NOT NULL,
+  period_from date NOT NULL,
+  period_to date NOT NULL,
+  amount_brl double precision NOT NULL CHECK (amount_brl > 0),
+  paid_at date NOT NULL,
+  type text NOT NULL CHECK (type IN ('pagamento', 'adiantamento')),
+  notes text,
+  created_by_user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_by_name text,
+  created_at timestamptz DEFAULT now(),
+  CHECK (period_from <= period_to)
+);
+
+CREATE INDEX IF NOT EXISTS idx_classifier_payment_entries_period ON public.classifier_payment_entries(period_from, period_to);
+CREATE INDEX IF NOT EXISTS idx_classifier_payment_entries_classifier ON public.classifier_payment_entries(classifier_name);
+
 -- Perfis de usuário (1:1 com auth.users)
 CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -41,10 +68,12 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   full_name text,
   role text DEFAULT 'operador',
   can_access_dashboard boolean DEFAULT false,
+  can_access_faturamento boolean DEFAULT false,
   can_access_expense_dashboard boolean DEFAULT false,
   can_access_reports boolean DEFAULT false,
   can_access_programacao boolean DEFAULT false,
   can_access_financeiro boolean DEFAULT false,
+  can_access_iris boolean DEFAULT false,
   can_manage_users boolean DEFAULT false,
   can_manage_config boolean DEFAULT false,
   last_seen_at timestamptz,
@@ -54,14 +83,18 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
 CREATE INDEX IF NOT EXISTS idx_profiles_can_access_dashboard ON public.profiles(can_access_dashboard);
+CREATE INDEX IF NOT EXISTS idx_profiles_can_access_faturamento ON public.profiles(can_access_faturamento);
 CREATE INDEX IF NOT EXISTS idx_profiles_can_access_expense_dashboard ON public.profiles(can_access_expense_dashboard);
 CREATE INDEX IF NOT EXISTS idx_profiles_can_access_reports ON public.profiles(can_access_reports);
 CREATE INDEX IF NOT EXISTS idx_profiles_can_access_programacao ON public.profiles(can_access_programacao);
 CREATE INDEX IF NOT EXISTS idx_profiles_can_access_financeiro ON public.profiles(can_access_financeiro);
+CREATE INDEX IF NOT EXISTS idx_profiles_can_access_iris ON public.profiles(can_access_iris);
 CREATE INDEX IF NOT EXISTS idx_profiles_can_manage_users ON public.profiles(can_manage_users);
 CREATE INDEX IF NOT EXISTS idx_profiles_can_manage_config ON public.profiles(can_manage_config);
 
 ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS can_access_faturamento boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS can_access_iris boolean DEFAULT false,
   ADD COLUMN IF NOT EXISTS last_seen_at timestamptz;
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -77,10 +110,12 @@ BEGIN
     full_name,
     role,
     can_access_dashboard,
+    can_access_faturamento,
     can_access_expense_dashboard,
     can_access_reports,
     can_access_programacao,
     can_access_financeiro,
+    can_access_iris,
     can_manage_users,
     can_manage_config
   )
@@ -90,10 +125,12 @@ BEGIN
     COALESCE(NEW.raw_user_meta_data->>'full_name', NULL),
     COALESCE(NEW.raw_user_meta_data->>'role', 'operador'),
     COALESCE((NEW.raw_user_meta_data->>'can_access_dashboard')::boolean, false),
+    COALESCE((NEW.raw_user_meta_data->>'can_access_faturamento')::boolean, false),
     COALESCE((NEW.raw_user_meta_data->>'can_access_expense_dashboard')::boolean, false),
     COALESCE((NEW.raw_user_meta_data->>'can_access_reports')::boolean, false),
     COALESCE((NEW.raw_user_meta_data->>'can_access_programacao')::boolean, false),
     COALESCE((NEW.raw_user_meta_data->>'can_access_financeiro')::boolean, false),
+    COALESCE((NEW.raw_user_meta_data->>'can_access_iris')::boolean, false),
     COALESCE((NEW.raw_user_meta_data->>'can_manage_users')::boolean, false),
     COALESCE((NEW.raw_user_meta_data->>'can_manage_config')::boolean, false)
   )
@@ -431,3 +468,24 @@ CREATE INDEX IF NOT EXISTS idx_operation_revenues_due_date ON public.operation_r
 CREATE INDEX IF NOT EXISTS idx_operation_revenues_expected_receipt_date ON public.operation_revenues(expected_receipt_date);
 CREATE INDEX IF NOT EXISTS idx_operation_revenues_received_at ON public.operation_revenues(received_at);
 CREATE INDEX IF NOT EXISTS idx_operation_revenues_status ON public.operation_revenues(status);
+
+-- Segurança: habilita RLS nas tabelas públicas usadas pelo backend
+-- Sem policies adicionais: anon/authenticated ficam bloqueados nessas tabelas.
+-- O backend continua funcionando via SUPABASE_SERVICE_ROLE_KEY, que bypassa RLS.
+ALTER TABLE public.os_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.billing_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.classifier_daily_rates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.classifier_payment_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.assistant_conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.assistant_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.operation_assets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.operation_asset_options ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.classificadores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.programacoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.programacao_itens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.operation_service_order_drafts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.operation_service_order_options ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.operation_expense_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.operation_expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.operation_revenue_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.operation_revenues ENABLE ROW LEVEL SECURITY;

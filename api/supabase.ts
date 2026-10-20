@@ -16,7 +16,7 @@ const normalizeSupabaseUrl = (raw: string): string => {
 export const getSupabase = (): SupabaseClient => {
   if (client) return client
 
-  const urlRaw = process.env.SUPABASE_URL
+  const urlRaw = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY
 
   if (!urlRaw || !key) {

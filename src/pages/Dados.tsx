@@ -5,6 +5,7 @@ import DateRangePicker from "@/components/DateRangePicker";
 import FitValue from "@/components/FitValue";
 import { useToast } from "@/components/ToastProvider";
 import { useRangeStore } from "@/stores/useRangeStore";
+import { useAuthStore } from "@/stores/useAuthStore";
 import { apiGet } from "@/utils/api";
 import { formatTons } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,7 @@ const brl = new Intl.NumberFormat("pt-BR", {
 type OsRecord = {
   id: string;
   osId?: string | null;
+  contractNumber?: string | null;
   date: string;
   clientName: string;
   embarkPoint: string;
@@ -38,6 +40,7 @@ type OsDetail = {
 };
 
 type RecordTypeFilter = "all" | "loads" | "rne";
+type SortMode = "date" | "contract";
 
 const typeFilterOptions: Array<{ value: RecordTypeFilter; label: string }> = [
   { value: "all", label: "Todos" },
@@ -48,8 +51,11 @@ const typeFilterOptions: Array<{ value: RecordTypeFilter; label: string }> = [
 export default function Dados() {
   const toast = useToast();
   const { range, setRange } = useRangeStore();
+  const canAccessFaturamento = useAuthStore((state) => state.canAccessFaturamento);
   const [q, setQ] = useState("");
   const [client, setClient] = useState("");
+  const [contract, setContract] = useState("");
+  const [sortMode, setSortMode] = useState<SortMode>("date");
   const [typeFilter, setTypeFilter] = useState<RecordTypeFilter>("all");
   const [page, setPage] = useState(1);
   const [pageSize] = useState(25);
@@ -60,6 +66,8 @@ export default function Dados() {
   const [revenue, setRevenue] = useState<number | null>(null);
   const [volumeLoading, setVolumeLoading] = useState(false);
   const [clients, setClients] = useState<string[]>([]);
+  const [contracts, setContracts] = useState<string[]>([]);
+  const [contractsLoading, setContractsLoading] = useState(false);
   const [clientsLoading, setClientsLoading] = useState(false);
   const [selectedOs, setSelectedOs] = useState<OsDetail | null>(null);
   const [selectedOsLoading, setSelectedOsLoading] = useState(false);
@@ -71,10 +79,12 @@ export default function Dados() {
     p.set("page", String(page));
     p.set("pageSize", String(pageSize));
     p.set("type", typeFilter);
+    p.set("sort", sortMode);
     if (q.trim().length) p.set("q", q.trim());
     if (client.trim().length) p.set("client", client.trim());
+    if (contract.trim().length) p.set("contract", contract.trim());
     return p.toString();
-  }, [client, page, pageSize, q, range.from, range.to, typeFilter]);
+  }, [client, contract, page, pageSize, q, range.from, range.to, sortMode, typeFilter]);
 
   const clientsQuery = useMemo(() => {
     const p = new URLSearchParams();
@@ -84,7 +94,7 @@ export default function Dados() {
     return p.toString();
   }, [range.from, range.to, typeFilter]);
 
-  const statsQuery = useMemo(() => {
+  const contractsQuery = useMemo(() => {
     const p = new URLSearchParams();
     p.set("from", range.from);
     p.set("to", range.to);
@@ -94,9 +104,20 @@ export default function Dados() {
     return p.toString();
   }, [client, q, range.from, range.to, typeFilter]);
 
+  const statsQuery = useMemo(() => {
+    const p = new URLSearchParams();
+    p.set("from", range.from);
+    p.set("to", range.to);
+    p.set("type", typeFilter);
+    if (q.trim().length) p.set("q", q.trim());
+    if (client.trim().length) p.set("client", client.trim());
+    if (contract.trim().length) p.set("contract", contract.trim());
+    return p.toString();
+  }, [client, contract, q, range.from, range.to, typeFilter]);
+
   useEffect(() => {
     setPage(1);
-  }, [range.from, range.to, q, typeFilter, client]);
+  }, [range.from, range.to, q, typeFilter, client, contract, sortMode]);
 
   useEffect(() => {
     let alive = true;
@@ -142,6 +163,29 @@ export default function Dados() {
     };
   }, [clientsQuery]);
 
+
+  useEffect(() => {
+    let alive = true;
+    setContractsLoading(true);
+    apiGet<{ contracts: string[] }>(`/api/os/contracts?${contractsQuery}`)
+      .then((r) => {
+        if (!alive) return;
+        setContracts(r.contracts ?? []);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setContracts([]);
+      })
+      .finally(() => {
+        if (!alive) return;
+        setContractsLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [contractsQuery]);
+
   useEffect(() => {
     let alive = true;
     setVolumeLoading(true);
@@ -151,7 +195,7 @@ export default function Dados() {
       .then((r) => {
         if (!alive) return;
         setVolume(r.stats.kpis.tonsTotal ?? 0);
-        setRevenue(r.stats.kpis.revenueEstimatedBRL ?? 0);
+        setRevenue(canAccessFaturamento ? r.stats.kpis.revenueEstimatedBRL ?? 0 : null);
       })
       .catch(() => {
         if (!alive) return;
@@ -166,7 +210,7 @@ export default function Dados() {
     return () => {
       alive = false;
     };
-  }, [statsQuery]);
+  }, [canAccessFaturamento, statsQuery]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const clientOptions = useMemo(() => {
@@ -175,6 +219,13 @@ export default function Dados() {
     if (clients.includes(current)) return clients;
     return [current, ...clients];
   }, [client, clients]);
+
+  const contractOptions = useMemo(() => {
+    const current = contract.trim();
+    if (!current) return contracts;
+    if (contracts.includes(current)) return contracts;
+    return [current, ...contracts];
+  }, [contract, contracts]);
 
   const exportFile = async (format: "csv" | "xlsx" | "pdf") => {
     const endpoint = format === "csv" ? "/api/export" : `/api/export/${format}`;
@@ -187,6 +238,8 @@ export default function Dados() {
         type: typeFilter,
         q: q.trim() || undefined,
         client: client.trim() || undefined,
+        contract: contract.trim() || undefined,
+        sort: sortMode,
       }),
     });
     if (!res.ok) {
@@ -228,9 +281,10 @@ export default function Dados() {
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">OS e Registros</h1>
           <div className="mt-2 text-sm text-app-soft">
             {total} registro(s) com movimentação no período • Volume:{" "}
-            {volumeLoading ? "..." : volume == null ? "—" : `${formatTons(volume)} t`} •
-            Faturamento:{" "}
-            {volumeLoading ? "..." : revenue == null ? "—" : brl.format(revenue)}
+            {volumeLoading ? "..." : volume == null ? "—" : `${formatTons(volume)} t`}
+            {canAccessFaturamento ? (
+              <> • Faturamento: {volumeLoading ? "..." : revenue == null ? "—" : brl.format(revenue)}</>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -273,7 +327,7 @@ export default function Dados() {
 
       <ChartCard
         title="Registros"
-        subtitle="Pesquisa por id/cliente/ponto e paginação"
+        subtitle="Pesquisa por id/OS/contrato/cliente/ponto e paginação"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex h-10 rounded-2xl bg-surface-soft p-1 ring-1 ring-app">
@@ -309,12 +363,40 @@ export default function Dados() {
                 </option>
               ))}
             </select>
+
+            <select
+              value={contract}
+              onChange={(e) => setContract(e.target.value)}
+              disabled={contractsLoading}
+              className={cn(
+                "h-10 w-52 rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                "outline-none ring-1 ring-app focus:ring-app-strong"
+              )}
+            >
+              <option value="">Todos os contratos</option>
+              {contractOptions.map((number) => (
+                <option key={number} value={number}>
+                  {number}
+                </option>
+              ))}
+            </select>
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              className={cn(
+                "h-10 w-44 rounded-2xl bg-surface-soft px-3 text-sm text-app",
+                "outline-none ring-1 ring-app focus:ring-app-strong"
+              )}
+            >
+              <option value="date">Ordenar por data</option>
+              <option value="contract">Ordenar por contrato</option>
+            </select>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-app-faint" />
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Buscar..."
+                placeholder="Buscar OS, contrato..."
                 className={cn(
                   "h-10 w-64 rounded-2xl bg-surface-soft pl-10 pr-3 text-sm text-app",
                   "outline-none ring-1 ring-app focus:ring-app-strong"
@@ -326,11 +408,12 @@ export default function Dados() {
       >
         <div className="overflow-hidden rounded-2xl ring-1 ring-app">
           <div className="overflow-auto">
-            <table className="min-w-[1120px] w-full text-left text-sm">
+            <table className="min-w-[1260px] w-full text-left text-sm">
               <thead className="bg-table-head text-xs uppercase tracking-[0.16em] text-app-soft">
                 <tr>
                   <th className="px-4 py-3">Data</th>
                   <th className="px-4 py-3">OS</th>
+                  <th className="px-4 py-3">Contrato</th>
                   <th className="px-4 py-3">Cliente</th>
                   <th className="px-4 py-3">Ponto</th>
                   <th className="px-4 py-3">Placa</th>
@@ -343,7 +426,7 @@ export default function Dados() {
               <tbody className="divide-y divide-app">
                 {loading ? (
                   <tr>
-                    <td className="px-4 py-6 text-app-soft" colSpan={9}>
+                    <td className="px-4 py-6 text-app-soft" colSpan={10}>
                       Carregando...
                     </td>
                   </tr>
@@ -352,6 +435,7 @@ export default function Dados() {
                     <tr key={r.id} className="hover:bg-surface-hover">
                       <td className="px-4 py-3 font-mono text-app-muted">{r.date}</td>
                       <td className="px-4 py-3 font-mono">{r.id}</td>
+                      <td className="px-4 py-3 font-mono text-app-muted">{r.contractNumber ?? "—"}</td>
                       <td className="px-4 py-3">{r.clientName}</td>
                       <td className="px-4 py-3">{r.embarkPoint}</td>
                       <td className="px-4 py-3 font-mono text-app-muted">{r.plate ?? "—"}</td>
@@ -377,7 +461,7 @@ export default function Dados() {
                   ))
                 ) : (
                   <tr>
-                    <td className="px-4 py-6 text-app-soft" colSpan={9}>
+                    <td className="px-4 py-6 text-app-soft" colSpan={10}>
                       Sem registros para o período.
                     </td>
                   </tr>
@@ -441,7 +525,7 @@ export default function Dados() {
             </div>
 
             <div className="max-h-[78vh] overflow-auto p-5">
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <div className={cn("grid grid-cols-1 gap-3", canAccessFaturamento ? "md:grid-cols-4" : "md:grid-cols-2")}>
                 <div className="rounded-2xl bg-surface-soft p-4 ring-1 ring-app">
                   <div className="text-xs uppercase tracking-[0.16em] text-app-faint">Volume</div>
                   <FitValue className="mt-2" maxRem={1.125} minRem={0.85}>
@@ -454,27 +538,32 @@ export default function Dados() {
                     {selectedOs.rneCount}
                   </FitValue>
                 </div>
-                <div className="rounded-2xl bg-surface-soft p-4 ring-1 ring-app">
-                  <div className="text-xs uppercase tracking-[0.16em] text-app-faint">Diárias</div>
-                  <FitValue className="mt-2" maxRem={1.125} minRem={0.85}>
-                    {selectedOs.dailyFeeCount}
-                  </FitValue>
-                </div>
-                <div className="rounded-2xl bg-surface-soft p-4 ring-1 ring-app">
-                  <div className="text-xs uppercase tracking-[0.16em] text-app-faint">Faturamento</div>
-                  <FitValue className="mt-2" maxRem={1.125} minRem={0.85}>
-                    {brl.format(selectedOs.revenueEstimatedBRL)}
-                  </FitValue>
-                </div>
+                {canAccessFaturamento ? (
+                  <>
+                    <div className="rounded-2xl bg-surface-soft p-4 ring-1 ring-app">
+                      <div className="text-xs uppercase tracking-[0.16em] text-app-faint">Diárias</div>
+                      <FitValue className="mt-2" maxRem={1.125} minRem={0.85}>
+                        {selectedOs.dailyFeeCount}
+                      </FitValue>
+                    </div>
+                    <div className="rounded-2xl bg-surface-soft p-4 ring-1 ring-app">
+                      <div className="text-xs uppercase tracking-[0.16em] text-app-faint">Faturamento</div>
+                      <FitValue className="mt-2" maxRem={1.125} minRem={0.85}>
+                        {brl.format(selectedOs.revenueEstimatedBRL)}
+                      </FitValue>
+                    </div>
+                  </>
+                ) : null}
               </div>
 
               <div className="mt-5 overflow-hidden rounded-2xl ring-1 ring-app">
                 <div className="overflow-auto">
-                  <table className="w-full min-w-[900px] text-left text-sm">
+                  <table className="w-full min-w-[980px] text-left text-sm">
                     <thead className="bg-table-head text-xs uppercase tracking-[0.16em] text-app-soft">
                       <tr>
                         <th className="px-4 py-3">Data</th>
                         <th className="px-4 py-3">Registro</th>
+                        <th className="px-4 py-3">Contrato</th>
                         <th className="px-4 py-3">Placa</th>
                         <th className="px-4 py-3">Ton</th>
                         <th className="px-4 py-3">RNE</th>
@@ -486,6 +575,7 @@ export default function Dados() {
                         <tr key={record.id} className="hover:bg-surface-hover">
                           <td className="px-4 py-3 font-mono text-app-muted">{record.date}</td>
                           <td className="px-4 py-3 font-mono">{record.id}</td>
+                          <td className="px-4 py-3 font-mono text-app-muted">{record.contractNumber ?? "—"}</td>
                           <td className="px-4 py-3 font-mono text-app-muted">{record.plate ?? "—"}</td>
                           <td className="px-4 py-3 font-mono">{formatTons(record.tons)}</td>
                           <td className="px-4 py-3 font-mono">{record.rne ?? "—"}</td>

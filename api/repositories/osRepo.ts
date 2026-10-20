@@ -6,6 +6,7 @@ import { getSupabase } from '../supabase.js'
 type OsRow = {
   id: string
   os_id: string | null
+  contract_number?: string | null
   date: string
   client_name: string
   embark_point: string
@@ -18,13 +19,18 @@ type OsRow = {
 
 const MOVEMENT_OR_FILTER = 'tons.gt.0,rne.eq.1,status.eq.RNE'
 
-const RECORD_COLUMNS = 'id,os_id,date,client_name,embark_point,classifier_name,plate,tons,rne,status'
+const isMissingContractColumnError = (message: string): boolean =>
+  /contract_number/i.test(message) && /(column|schema|cache|does not exist|not found)/i.test(message)
+
+const RECORD_COLUMNS = 'id,os_id,contract_number,date,client_name,embark_point,classifier_name,plate,tons,rne,status'
+const LEGACY_RECORD_COLUMNS = 'id,os_id,date,client_name,embark_point,classifier_name,plate,tons,rne,status'
 
 export type OsRecordTypeFilter = 'all' | 'loads' | 'rne'
 
 const toRow = (r: OsRecord): OsRow => ({
   id: r.id,
   os_id: r.osId?.trim() ? r.osId.trim() : null,
+  contract_number: r.contractNumber?.trim() ? r.contractNumber.trim() : null,
   date: r.date,
   client_name: r.clientName,
   embark_point: r.embarkPoint,
@@ -38,6 +44,7 @@ const toRow = (r: OsRecord): OsRow => ({
 const fromRow = (r: OsRow): OsRecord => ({
   id: r.id,
   osId: r.os_id ?? null,
+  contractNumber: r.contract_number ?? null,
   date: r.date,
   clientName: r.client_name,
   embarkPoint: r.embark_point,
@@ -145,8 +152,14 @@ export const upsertOsRecords = async (records: OsRecord[]): Promise<void> => {
   const { items } = dedupeOsRecordsById(records)
   if (!items.length) return
   const sb = getSupabase()
-  const { error } = await sb.from('os_records').upsert(items.map(toRow), { onConflict: 'id' })
-  if (error) throw new Error(error.message)
+  const rows = items.map(toRow)
+  const { error } = await sb.from('os_records').upsert(rows, { onConflict: 'id' })
+  if (!error) return
+  if (!isMissingContractColumnError(error.message)) throw new Error(error.message)
+
+  const legacyRows = rows.map(({ contract_number: _contractNumber, ...row }) => row)
+  const { error: legacyError } = await sb.from('os_records').upsert(legacyRows, { onConflict: 'id' })
+  if (legacyError) throw new Error(legacyError.message)
 }
 
 export const deleteStaleLoadRecords = async (args: {
@@ -216,7 +229,9 @@ export const listOsRecords = async (args: {
   q?: string
   client?: string
   point?: string
+  contract?: string
   type?: OsRecordTypeFilter
+  sort?: 'date' | 'contract'
   page: number
   pageSize: number
 }): Promise<{ items: OsRecord[]; total: number }> => {
@@ -225,24 +240,37 @@ export const listOsRecords = async (args: {
   const toIndex = offset + args.pageSize - 1
   const canonicalClients = await listCanonicalClientNames()
 
-  let query = sb
-    .from('os_records')
-    .select(RECORD_COLUMNS, { count: 'exact' })
-    .gte('date', args.from)
-    .lte('date', args.to)
-    .or(MOVEMENT_OR_FILTER)
+  const buildQuery = (columns: string, supportsContract: boolean) => {
+    let query = sb
+      .from('os_records')
+      .select(columns, { count: 'exact' })
+      .gte('date', args.from)
+      .lte('date', args.to)
+      .or(MOVEMENT_OR_FILTER)
 
-  query = applyOsRecordFilters(query, { ...args, client: undefined })
+    query = applyOsRecordFilters(query, { ...args, client: undefined }, supportsContract)
+
+    const sortByContract = supportsContract && args.sort === 'contract'
+    return sortByContract
+      ? query.order('contract_number', { ascending: true, nullsFirst: false }).order('date', { ascending: false })
+      : query.order('date', { ascending: false })
+  }
 
   const needsClientFilter = Boolean(args.client)
-  const { data, count, error } = await query
-    .order('date', { ascending: false })
+  let result: any = await buildQuery(RECORD_COLUMNS, true)
     .order('id', { ascending: false })
     .range(needsClientFilter ? 0 : offset, needsClientFilter ? 9999 : toIndex)
 
+  if (result.error && isMissingContractColumnError(result.error.message)) {
+    result = await buildQuery(LEGACY_RECORD_COLUMNS, false)
+      .order('id', { ascending: false })
+      .range(needsClientFilter ? 0 : offset, needsClientFilter ? 9999 : toIndex)
+  }
+
+  const { data, count, error } = result
   if (error) throw new Error(error.message)
 
-  const records = canonicalizeRecordClients((data ?? []).map(fromRow), canonicalClients)
+  const records = canonicalizeRecordClients((data ?? []).map((row: OsRow) => fromRow(row)), canonicalClients)
   if (needsClientFilter) {
     const filtered = filterRecordsByCanonicalClient(records, args.client, canonicalClients)
     return {
@@ -270,12 +298,15 @@ const applyOsRecordFilters = <T extends FilterableQuery<T>>(
     q?: string
     client?: string
     point?: string
+    contract?: string
     type?: OsRecordTypeFilter
   },
+  supportsContract = true,
 ): T => {
   let q = query
   if (args.client) q = q.eq('client_name', args.client)
   if (args.point) q = q.eq('embark_point', args.point)
+  if (args.contract && supportsContract) q = q.eq('contract_number', args.contract)
   if (args.type === 'rne') {
     q = q.or('rne.eq.1,status.eq.RNE,id.ilike.RNE-%')
   } else if (args.type === 'loads') {
@@ -283,7 +314,15 @@ const applyOsRecordFilters = <T extends FilterableQuery<T>>(
   }
   if (args.q) {
     const like = `%${args.q}%`
-    q = q.or(`id.ilike.${like},os_id.ilike.${like},client_name.ilike.${like},embark_point.ilike.${like},plate.ilike.${like}`)
+    const fields = [
+      `id.ilike.${like}`,
+      `os_id.ilike.${like}`,
+      supportsContract ? `contract_number.ilike.${like}` : null,
+      `client_name.ilike.${like}`,
+      `embark_point.ilike.${like}`,
+      `plate.ilike.${like}`,
+    ].filter(Boolean)
+    q = q.or(fields.join(','))
   }
   return q
 }
@@ -359,27 +398,38 @@ export const listOsRecordsForExport = async (args: {
   q?: string
   client?: string
   point?: string
+  contract?: string
   type?: OsRecordTypeFilter
+  sort?: 'date' | 'contract'
 }): Promise<OsRecord[]> => {
   const sb = getSupabase()
   const canonicalClients = await listCanonicalClientNames()
 
-  let query = sb
-    .from('os_records')
-    .select(RECORD_COLUMNS)
-    .gte('date', args.from)
-    .lte('date', args.to)
-    .or(MOVEMENT_OR_FILTER)
+  const buildQuery = (columns: string, supportsContract: boolean) => {
+    let query = sb
+      .from('os_records')
+      .select(columns)
+      .gte('date', args.from)
+      .lte('date', args.to)
+      .or(MOVEMENT_OR_FILTER)
 
-  query = applyOsRecordFilters(query, { ...args, client: undefined })
+    query = applyOsRecordFilters(query, { ...args, client: undefined }, supportsContract)
 
-  const { data, error } = await query
-    .order('date', { ascending: false })
-    .order('id', { ascending: false })
+    const sortByContract = supportsContract && args.sort === 'contract'
+    return sortByContract
+      ? query.order('contract_number', { ascending: true, nullsFirst: false }).order('date', { ascending: false })
+      : query.order('date', { ascending: false })
+  }
 
+  let result: any = await buildQuery(RECORD_COLUMNS, true).order('id', { ascending: false })
+  if (result.error && isMissingContractColumnError(result.error.message)) {
+    result = await buildQuery(LEGACY_RECORD_COLUMNS, false).order('id', { ascending: false })
+  }
+
+  const { data, error } = result
   if (error) throw new Error(error.message)
 
-  const records = canonicalizeRecordClients((data ?? []).map(fromRow), canonicalClients)
+  const records = canonicalizeRecordClients((data ?? []).map((row: OsRow) => fromRow(row)), canonicalClients)
   return args.client ? filterRecordsByCanonicalClient(records, args.client, canonicalClients) : records
 }
 
@@ -390,36 +440,51 @@ export const listOsRecordsByOsId = async (args: {
 }): Promise<OsRecord[]> => {
   const sb = getSupabase()
 
-  let query = sb
-    .from('os_records')
-    .select(RECORD_COLUMNS)
-    .eq('os_id', args.osId)
-    .or(MOVEMENT_OR_FILTER)
+  const buildQuery = (columns: string) => {
+    let query = sb
+      .from('os_records')
+      .select(columns)
+      .eq('os_id', args.osId)
+      .or(MOVEMENT_OR_FILTER)
 
-  if (args.from) query = query.gte('date', args.from)
-  if (args.to) query = query.lte('date', args.to)
+    if (args.from) query = query.gte('date', args.from)
+    if (args.to) query = query.lte('date', args.to)
+    return query.order('date', { ascending: false }).order('id', { ascending: false })
+  }
 
-  const { data, error } = await query
-    .order('date', { ascending: false })
-    .order('id', { ascending: false })
+  let result: any = await buildQuery(RECORD_COLUMNS)
+  if (result.error && isMissingContractColumnError(result.error.message)) {
+    result = await buildQuery(LEGACY_RECORD_COLUMNS)
+  }
 
+  const { data, error } = result
   if (error) throw new Error(error.message)
 
-  return (data ?? []).map(fromRow)
+  return (data ?? []).map((row: OsRow) => fromRow(row))
 }
 
 export const listOsRecordsInRange = async (from: string, to: string): Promise<OsRecord[]> => {
   const sb = getSupabase()
-  const { data, error } = await sb
+  let result: any = await sb
     .from('os_records')
     .select(RECORD_COLUMNS)
     .gte('date', from)
     .lte('date', to)
     .or(MOVEMENT_OR_FILTER)
 
+  if (result.error && isMissingContractColumnError(result.error.message)) {
+    result = await sb
+      .from('os_records')
+      .select(LEGACY_RECORD_COLUMNS)
+      .gte('date', from)
+      .lte('date', to)
+      .or(MOVEMENT_OR_FILTER)
+  }
+
+  const { data, error } = result
   if (error) throw new Error(error.message)
 
-  return filterMovementRecords((data ?? []).map(fromRow))
+  return filterMovementRecords((data ?? []).map((row: OsRow) => fromRow(row)))
 }
 
 const isRneLikeRecord = (record: OsRecord): boolean =>
@@ -578,8 +643,11 @@ export const listClientNames = async (args: {
   point?: string
   type?: OsRecordTypeFilter
 }): Promise<string[]> => {
-  const sb = getSupabase()
   const canonicalClients = await listCanonicalClientNames()
+
+  if (canonicalClients.length > 0) return canonicalClients
+
+  const sb = getSupabase()
 
   let query = sb
     .from('os_records')
@@ -603,4 +671,34 @@ export const listClientNames = async (args: {
   }
 
   return [...set.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+}
+
+
+export const listContractNumbers = async (args: {
+  from: string
+  to: string
+  q?: string
+  client?: string
+  point?: string
+  type?: OsRecordTypeFilter
+}): Promise<string[]> => {
+  let records: OsRecord[]
+  try {
+    records = await listOsRecordsForExport({
+      from: args.from,
+      to: args.to,
+      q: args.q,
+      client: args.client,
+      point: args.point,
+      type: args.type,
+      sort: 'contract',
+    })
+  } catch (e) {
+    if (e instanceof Error && isMissingContractColumnError(e.message)) return []
+    throw e
+  }
+
+  return [...new Set(records.map((record) => String(record.contractNumber ?? '').trim()).filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }),
+  )
 }

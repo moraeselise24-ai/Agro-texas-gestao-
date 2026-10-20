@@ -65,10 +65,12 @@ function RequirePermission({
 export default function App() {
   const init = useAuthStore((s) => s.init);
   const canAccessDashboard = useAuthStore((s) => s.canAccessDashboard);
+  const canAccessFaturamento = useAuthStore((s) => s.canAccessFaturamento);
   const canAccessExpenseDashboard = useAuthStore((s) => s.canAccessExpenseDashboard);
   const canAccessReports = useAuthStore((s) => s.canAccessReports);
   const canAccessProgramacao = useAuthStore((s) => s.canAccessProgramacao);
   const canAccessFinanceiro = useAuthStore((s) => s.canAccessFinanceiro);
+  const canAccessIris = useAuthStore((s) => s.canAccessIris);
   const canManageUsers = useAuthStore((s) => s.canManageUsers);
   const canManageConfig = useAuthStore((s) => s.canManageConfig);
   useTheme();
@@ -89,11 +91,18 @@ export default function App() {
             </RequireAuth>
           }
         >
-          <Route path="/assistente" element={<Assistente />} />
+          <Route
+            path="/assistente"
+            element={
+              <RequirePermission allowed={canAccessIris}>
+                <Assistente />
+              </RequirePermission>
+            }
+          />
           <Route
             path="/"
             element={
-              <RequirePermission allowed={canAccessDashboard}>
+              <RequirePermission allowed={canAccessDashboard || canAccessFaturamento}>
                 <Dashboard />
               </RequirePermission>
             }
@@ -101,7 +110,7 @@ export default function App() {
           <Route
             path="/dashboard-despesas"
             element={
-              <RequirePermission allowed={canAccessExpenseDashboard}>
+              <RequirePermission allowed={canAccessFinanceiro && canAccessExpenseDashboard}>
                 <DashboardDespesas />
               </RequirePermission>
             }

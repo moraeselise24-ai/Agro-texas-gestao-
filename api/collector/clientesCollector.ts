@@ -44,8 +44,16 @@ const cleanCell = (value: string | undefined): string | null => {
   return clean
 }
 
-const isLtdaClientName = (value: string | null | undefined): value is string =>
-  Boolean(value && /\bLTDA\.?$/i.test(value.trim()))
+const isLikelyClientName = (value: string | null | undefined): value is string => {
+  const clean = cleanCell(value)
+  if (!clean) return false
+  if (clean.length < 3) return false
+  if (/^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/i.test(clean.replace(/[^a-z0-9]/gi, ''))) return false
+  if (/^R\$\s*[\d.,]+$/i.test(clean)) return false
+  if (/^\d+([.,]\d+)?$/.test(clean)) return false
+  if (/^teste\s+gr[aá]tis/i.test(clean)) return false
+  return /[a-zÀ-ÿ]{3,}/i.test(clean)
+}
 
 const absoluteUrl = (href: string, cfg: ClientesCollectorConfig): string => {
   try {
@@ -188,8 +196,8 @@ const readCurrentPageClients = async (
       })
       .catch(() => null)
     const legalName = await readLegalNameFromDetail(detailPage, cfg, detailHref)
-    const selectedName = isLtdaClientName(legalName) ? legalName : isLtdaClientName(name) ? name : null
-    if (!selectedName) continue
+    const selectedName = cleanCell(legalName ?? undefined) ?? name
+    if (!isLikelyClientName(selectedName)) continue
 
     items.push({
       type: 'client',
