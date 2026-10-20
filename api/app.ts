@@ -34,6 +34,7 @@ import workedDaysRoutes from './routes/workedDays.js'
 import plateOccurrencesRoutes from './routes/plateOccurrences.js'
 
 // load env
+dotenv.config({ path: '.env.local' })
 dotenv.config()
 
 const __dirname = process.cwd()

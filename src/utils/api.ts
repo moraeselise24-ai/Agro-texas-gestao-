@@ -45,3 +45,24 @@ export const apiJson = async <T>(
   }
   return json;
 };
+
+export const apiJsonAt = async <T>(
+  url: string,
+  init: Omit<RequestInit, "body"> & { body?: unknown }
+): Promise<ApiResult<T>> => {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+      ...(init.headers ?? {}),
+    },
+    body: init.body == null ? undefined : JSON.stringify(init.body),
+    mode: "cors",
+  });
+  const json = (await res.json()) as ApiResponse<T>;
+  if (!json.success) {
+    throw new Error((json as ApiError).error || "Erro na API");
+  }
+  return json;
+};

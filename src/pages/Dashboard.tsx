@@ -7,7 +7,7 @@ import EChart from "@/components/EChart";
 import { useToast } from "@/components/ToastProvider";
 import { formatTons, roundTons, rneAxisLabel, tonsAxisLabel } from "@/lib/format";
 import { useRangeStore } from "@/stores/useRangeStore";
-import { apiGet, apiJson } from "@/utils/api";
+import { apiGet, apiJson, apiJsonAt } from "@/utils/api";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuthStore } from "@/stores/useAuthStore";
@@ -110,7 +110,12 @@ export default function Dashboard() {
   const runSync = async () => {
     setSyncLoading(true);
     try {
-      await apiJson("/api/sync/run", { method: "POST" });
+      try {
+        await apiJsonAt("http://127.0.0.1:3001/api/sync/run", { method: "POST" });
+      } catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+        await apiJson("/api/sync/run", { method: "POST" });
+      }
       toast.success("Sincronização concluída.");
       const r = await apiGet<{ stats: Stats }>(`/api/stats?from=${range.from}&to=${range.to}`);
       setStats(r.stats);

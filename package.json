@@ -12,7 +12,8 @@
     "check": "tsc --noEmit",
     "server:dev": "nodemon",
     "dev": "concurrently \"npm run client:dev\" \"npm run server:dev\"",
-    "collect:local": "tsx api/localCollector.ts"
+    "collect:local": "tsx api/localCollector.ts",
+    "collector:server": "HOST=127.0.0.1 PORT=3001 tsx api/server.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
