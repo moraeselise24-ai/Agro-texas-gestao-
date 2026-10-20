@@ -12,6 +12,8 @@ import {
 } from '../repositories/expensesRepo.js'
 import { buildExpensesPdf, buildExpensesXlsx } from '../services/expensesExport.js'
 import { formatResponsavelNome, getRequestUser } from '../utils/requestUser.js'
+import { listWorkedDaysByClassifier } from '../repositories/osRepo.js'
+import { syncWorkedDaysExpenses } from '../repositories/expensesRepo.js'
 
 const router = Router()
 
@@ -97,7 +99,16 @@ router.delete('/categories/:id', async (req: Request, res: Response): Promise<vo
 
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await listExpenses(parseListFilters(req))
+    const filters = parseListFilters(req)
+    if (filters.from && filters.to) {
+      try {
+        const workedDays = await listWorkedDaysByClassifier({ from: filters.from, to: filters.to, q: filters.q })
+        await syncWorkedDaysExpenses({ items: workedDays.items, from: filters.from, to: filters.to })
+      } catch (error) {
+        if (!(error instanceof Error) || !/source_key|source_type|schema cache|operation_expenses/i.test(error.message)) throw error
+      }
+    }
+    const result = await listExpenses(filters)
     res.status(200).json({ success: true, ...result })
   } catch (e: unknown) {
     res.status(500).json({

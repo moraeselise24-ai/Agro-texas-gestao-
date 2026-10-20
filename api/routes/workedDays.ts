@@ -3,6 +3,7 @@ import { createClassifierPaymentEntry, deleteClassifierPaymentEntry, getWorkedDa
 import { listWorkedDaysByClassifier } from '../repositories/osRepo.js'
 import { buildWorkedDaysPdf, buildWorkedDaysXlsx } from '../services/workedDaysExport.js'
 import { formatResponsavelNome, getRequestUser } from '../utils/requestUser.js'
+import { syncWorkedDaysExpenses } from '../repositories/expensesRepo.js'
 
 const router = Router()
 
@@ -18,7 +19,7 @@ const parseAmount = (value: unknown): number => {
 const validDate = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value)
 
 const isCompensationSchemaMissing = (error: unknown): boolean =>
-  error instanceof Error && /classifier_daily_rates|classifier_payment_entries|schema cache/i.test(error.message)
+  error instanceof Error && /classifier_daily_rates|classifier_payment_entries|source_key|source_type|schema cache/i.test(error.message)
 
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -35,6 +36,11 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     let compensation = new Map()
     try {
       compensation = await getWorkedDaysCompensation({ items: result.items, from, to })
+    } catch (error) {
+      if (!isCompensationSchemaMissing(error)) throw error
+    }
+    try {
+      await syncWorkedDaysExpenses({ items: result.items, from, to })
     } catch (error) {
       if (!isCompensationSchemaMissing(error)) throw error
     }

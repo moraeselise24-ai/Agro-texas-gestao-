@@ -100,6 +100,8 @@ export type ServiceOrderDraft = {
   createdByName: string | null
   createdAt: string | null
   updatedAt: string | null
+  sourceType?: string | null
+  sourceKey?: string | null
 }
 
 export type ExpenseStatus = 'agendada' | 'a_pagar' | 'paga' | 'cancelada'
@@ -135,6 +137,8 @@ export type Expense = {
   createdByName: string | null
   createdAt: string | null
   updatedAt: string | null
+  sourceType?: string | null
+  sourceKey?: string | null
 }
 
 export type RevenueStatus = 'prevista' | 'a_receber' | 'recebida' | 'cancelada'

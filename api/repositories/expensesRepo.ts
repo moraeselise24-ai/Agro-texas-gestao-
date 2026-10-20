@@ -6,6 +6,8 @@ import type {
   RecurrenceFrequency,
 } from '../types.js'
 import { getSupabase } from '../supabase.js'
+import type { WorkedDayClassifierSummary } from '../types.js'
+import { getWorkedDaysCompensation } from './classifierCompensationRepo.js'
 
 type ExpenseRow = {
   id: string
@@ -28,6 +30,8 @@ type ExpenseRow = {
   created_by_name: string | null
   created_at: string | null
   updated_at: string | null
+  source_type: string | null
+  source_key: string | null
 }
 
 type ExpenseCategoryRow = {
@@ -39,7 +43,7 @@ type ExpenseCategoryRow = {
 }
 
 const EXPENSE_COLUMNS =
-  'id,date,category,description,supplier,amount_brl,payment_method,document_number,due_date,scheduled_payment_date,paid_at,status,is_recurring,recurrence_frequency,recurrence_until,notes,created_by_user_id,created_by_name,created_at,updated_at'
+  'id,date,category,description,supplier,amount_brl,payment_method,document_number,due_date,scheduled_payment_date,paid_at,status,is_recurring,recurrence_frequency,recurrence_until,notes,created_by_user_id,created_by_name,created_at,updated_at,source_type,source_key'
 
 const CATEGORY_COLUMNS = 'id,name,active,created_at,updated_at'
 
@@ -77,6 +81,8 @@ const slugCategoryId = (name: string): string =>
 const normalizeCategoryName = (name: string): string =>
   name.trim().replace(/\s+/g, ' ')
 
+const normalizeName = normalizeCategoryName
+
 const fromCategoryRow = (row: ExpenseCategoryRow): ExpenseCategory => ({
   id: row.id,
   name: row.name,
@@ -106,6 +112,8 @@ const fromRow = (row: ExpenseRow): Expense => ({
   createdByName: row.created_by_name ?? null,
   createdAt: row.created_at ?? null,
   updatedAt: row.updated_at ?? null,
+  sourceType: row.source_type ?? null,
+  sourceKey: row.source_key ?? null,
 })
 
 export const ensureDefaultExpenseCategories = async (): Promise<void> => {
@@ -259,6 +267,64 @@ export const listExpensesForExport = async (args: {
     totalAmountBRL: result.totalAmountBRL,
   }
 }
+
+export const syncWorkedDaysExpenses = async (args: {
+  items: WorkedDayClassifierSummary[]
+  from: string
+  to: string
+  createdByUserId?: string | null
+  createdByName?: string | null
+}): Promise<number> => {
+  if (!args.items.length) return 0
+  const compensation = await getWorkedDaysCompensation({ items: args.items, from: args.from, to: args.to })
+  const rows = args.items.flatMap((item) => {
+    const key = normalizeName(item.classifierName)
+    const entry = compensation.get(key)
+    if (!entry || entry.dailyRateBRL == null || entry.projectedPaymentBRL <= 0) return []
+    const sourceKey = 'classifier_daily:' + args.from + ':' + args.to + ':' + key
+    const id = 'diaria-' + crypto.createHash('sha256').update(sourceKey).digest('hex').slice(0, 32)
+    const isPaid = entry.paidAmountBRL >= entry.projectedPaymentBRL - 0.005
+    const paidAt = isPaid ? entry.payments[0]?.paidAt ?? args.to : null
+    const balance = Math.max(entry.balanceBRL, 0)
+    const notes = [
+      'Período: ' + args.from + ' a ' + args.to,
+      'Dias trabalhados: ' + item.daysWorked,
+      'Diária: ' + entry.dailyRateBRL.toFixed(2),
+      'Pago/adiantado: ' + entry.paidAmountBRL.toFixed(2),
+      'Saldo: ' + balance.toFixed(2),
+    ].join(' | ')
+    return [{
+      id,
+      date: args.to,
+      category: 'Funcionários',
+      description: 'Diárias - ' + key + ' (' + args.from + ' a ' + args.to + ')',
+      supplier: key,
+      amount_brl: entry.projectedPaymentBRL,
+      payment_method: null,
+      document_number: null,
+      due_date: args.to,
+      scheduled_payment_date: args.to,
+      paid_at: paidAt,
+      status: isPaid ? 'paga' : 'a_pagar',
+      is_recurring: false,
+      recurrence_frequency: null,
+      recurrence_until: null,
+      notes,
+      created_by_user_id: args.createdByUserId ?? null,
+      created_by_name: args.createdByName ?? null,
+      source_type: 'classifier_daily',
+      source_key: sourceKey,
+      updated_at: new Date().toISOString(),
+    }]
+  })
+  if (!rows.length) return 0
+  const { error } = await getSupabase()
+    .from('operation_expenses')
+    .upsert(rows, { onConflict: 'source_key' })
+  if (error) throw new Error(error.message)
+  return rows.length
+}
+
 
 export const saveExpense = async (args: {
   id?: string

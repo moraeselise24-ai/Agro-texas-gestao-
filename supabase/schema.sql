@@ -397,6 +397,9 @@ CREATE TABLE IF NOT EXISTS public.operation_expenses (
   updated_at timestamptz DEFAULT now()
 );
 
+ALTER TABLE public.operation_expenses ADD COLUMN IF NOT EXISTS source_type text;
+ALTER TABLE public.operation_expenses ADD COLUMN IF NOT EXISTS source_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_operation_expenses_source_key ON public.operation_expenses(source_key);
 ALTER TABLE public.operation_expenses ADD COLUMN IF NOT EXISTS due_date date;
 ALTER TABLE public.operation_expenses ADD COLUMN IF NOT EXISTS scheduled_payment_date date;
 ALTER TABLE public.operation_expenses ADD COLUMN IF NOT EXISTS paid_at date;
