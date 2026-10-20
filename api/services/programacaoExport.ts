@@ -1,9 +1,8 @@
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import type { Programacao } from '../types.js'
 
-const moduleDir = path.dirname(fileURLToPath(import.meta.url))
+const moduleDir = process.cwd()
 
 const getLogoDataUri = (): string => {
   const candidates = [

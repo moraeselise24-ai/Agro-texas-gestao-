@@ -11,7 +11,6 @@ import cors from 'cors'
 import fs from 'fs'
 import path from 'path'
 import dotenv from 'dotenv'
-import { fileURLToPath } from 'url'
 import authRoutes from './routes/auth.js'
 import configRoutes from './routes/config.js'
 import statsRoutes from './routes/stats.js'
@@ -37,8 +36,7 @@ import plateOccurrencesRoutes from './routes/plateOccurrences.js'
 // load env
 dotenv.config()
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const __dirname = process.cwd()
 
 const app: express.Application = express()
 

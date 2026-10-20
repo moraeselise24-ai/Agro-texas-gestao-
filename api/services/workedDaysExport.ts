@@ -1,6 +1,5 @@
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import type { WorkedDayClassifierSummary, WorkedDaysTotals } from '../types.js'
 
 const tonsFormatter = new Intl.NumberFormat('pt-BR', {
@@ -31,8 +30,7 @@ const escapeHtml = (value: string): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const __dirname = process.cwd()
 
 const readLogoDataUri = (): string | null => {
   const candidates = [
